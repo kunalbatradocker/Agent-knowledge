@@ -1,0 +1,45 @@
+{
+  "@context": {
+    "@vocab": "http://example.org/ontology#",
+    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "owl": "http://www.w3.org/2002/07/owl#"
+  },
+  "@id": "http://example.org/ontology",
+  "@graph": [
+    {
+      "@id": "http://example.org/ontology#Person",
+      "@type": ["owl:Class"],
+      "rdfs:label": [{"@value": "Person"}],
+      "rdfs:comment": [{"@value": "A human being"}]
+    },
+    {
+      "@id": "http://example.org/ontology#Organization",
+      "@type": ["owl:Class"],
+      "rdfs:label": [{"@value": "Organization"}],
+      "rdfs:comment": [{"@value": "An organization or company"}]
+    },
+    {
+      "@id": "http://example.org/ontology#Employee",
+      "@type": ["owl:Class"],
+      "rdfs:label": [{"@value": "Employee"}],
+      "rdfs:comment": [{"@value": "A person who works for an organization"}],
+      "rdfs:subClassOf": [{"@id": "http://example.org/ontology#Person"}]
+    },
+    {
+      "@id": "http://example.org/ontology#worksFor",
+      "@type": ["owl:ObjectProperty"],
+      "rdfs:label": [{"@value": "works for"}],
+      "rdfs:comment": [{"@value": "Indicates that a person works for an organization"}],
+      "rdfs:domain": [{"@id": "http://example.org/ontology#Person"}],
+      "rdfs:range": [{"@id": "http://example.org/ontology#Organization"}]
+    },
+    {
+      "@id": "http://example.org/ontology#hasName",
+      "@type": ["owl:DatatypeProperty"],
+      "rdfs:label": [{"@value": "has name"}],
+      "rdfs:domain": [{"@id": "http://example.org/ontology#Person"}]
+    }
+  ]
+}
+

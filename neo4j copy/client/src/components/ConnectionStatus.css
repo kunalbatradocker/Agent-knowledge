@@ -1,0 +1,49 @@
+/* Connection Status - Minimal */
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  background: #fafafa;
+  border: 1px solid #ddd;
+}
+
+.connection-status.connected {
+  border-color: #333;
+}
+
+.connection-status.disconnected {
+  border-color: #c00;
+}
+
+.connection-status.connecting {
+  border-color: #c90;
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #333;
+}
+
+.connection-status.disconnected .status-indicator {
+  background: #c00;
+}
+
+.connection-status.connecting .status-indicator {
+  background: #c90;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.status-text {
+  font-weight: 500;
+}

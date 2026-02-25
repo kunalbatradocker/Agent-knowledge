@@ -1,0 +1,836 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix : <http://example.org/legal-contract#> .
+
+# Ontology Declaration
+:LegalContractOntology a owl:Ontology ;
+    rdfs:label "Enhanced Legal Contract Ontology" ;
+    rdfs:comment "High-standard legal contract ontology with comprehensive relationships and legal concepts" ;
+    owl:versionInfo "2.0" .
+
+# ============================================================================
+# CLASSES
+# ============================================================================
+
+:Contract a owl:Class ;
+    rdfs:label "Contract" ;
+    rdfs:comment "Legal agreement between parties" .
+
+:Party a owl:Class ;
+    rdfs:label "Party" ;
+    rdfs:comment "Legal entity party to the contract" .
+
+:Clause a owl:Class ;
+    rdfs:label "Clause" ;
+    rdfs:comment "Specific provision in the contract" .
+
+:Obligation a owl:Class ;
+    rdfs:label "Obligation" ;
+    rdfs:comment "Legal duty imposed by the contract" .
+
+:Right a owl:Class ;
+    rdfs:label "Right" ;
+    rdfs:comment "Legal entitlement granted by the contract" .
+
+:Term a owl:Class ;
+    rdfs:label "Term" ;
+    rdfs:comment "Defined term or condition" .
+
+:Payment a owl:Class ;
+    rdfs:label "Payment" ;
+    rdfs:comment "Financial obligation or payment term" .
+
+:Deliverable a owl:Class ;
+    rdfs:label "Deliverable" ;
+    rdfs:comment "Work product or service to be delivered" .
+
+:Milestone a owl:Class ;
+    rdfs:label "Milestone" ;
+    rdfs:comment "Key project milestone or deadline" .
+
+:Warranty a owl:Class ;
+    rdfs:label "Warranty" ;
+    rdfs:comment "Guarantee or assurance provided" .
+
+:Indemnity a owl:Class ;
+    rdfs:label "Indemnity" ;
+    rdfs:comment "Protection against loss or damage" .
+
+:Penalty a owl:Class ;
+    rdfs:label "Penalty" ;
+    rdfs:comment "Consequence for breach or non-performance" .
+
+:Termination a owl:Class ;
+    rdfs:label "Termination" ;
+    rdfs:comment "Contract termination provision" .
+
+:Dispute a owl:Class ;
+    rdfs:label "Dispute" ;
+    rdfs:comment "Disagreement or conflict resolution mechanism" .
+
+:Jurisdiction a owl:Class ;
+    rdfs:label "Jurisdiction" ;
+    rdfs:comment "Legal jurisdiction governing the contract" .
+
+:LegalEntity a owl:Class ;
+    rdfs:label "Legal Entity" ;
+    rdfs:comment "Corporation, LLC, or other legal entity" .
+
+:Individual a owl:Class ;
+    rdfs:label "Individual" ;
+    rdfs:comment "Natural person party to contract" .
+
+:Amendment a owl:Class ;
+    rdfs:label "Amendment" ;
+    rdfs:comment "Modification to the original contract" .
+
+:Exhibit a owl:Class ;
+    rdfs:label "Exhibit" ;
+    rdfs:comment "Attachment or appendix to the contract" .
+
+:Signature a owl:Class ;
+    rdfs:label "Signature" ;
+    rdfs:comment "Legal signature and execution details" .
+
+# ============================================================================
+# ENHANCED OBJECT PROPERTIES
+# ============================================================================
+
+# Contract Structure Relationships
+:contractBetween a owl:ObjectProperty ;
+    rdfs:label "Contract Between" ;
+    rdfs:domain :Contract ;
+    rdfs:range :Party .
+
+:contractContains a owl:ObjectProperty ;
+    rdfs:label "Contract Contains" ;
+    rdfs:domain :Contract ;
+    rdfs:range [ owl:unionOf ( :Clause :Term :Exhibit ) ] .
+
+:contractGoverned a owl:ObjectProperty ;
+    rdfs:label "Contract Governed" ;
+    rdfs:domain :Contract ;
+    rdfs:range :Jurisdiction .
+
+:contractAmendedBy a owl:ObjectProperty ;
+    rdfs:label "Contract Amended By" ;
+    rdfs:domain :Contract ;
+    rdfs:range :Amendment .
+
+:contractSignedBy a owl:ObjectProperty ;
+    rdfs:label "Contract Signed By" ;
+    rdfs:domain :Contract ;
+    rdfs:range :Signature .
+
+:contractSupersedes a owl:ObjectProperty ;
+    rdfs:label "Contract Supersedes" ;
+    rdfs:domain :Contract ;
+    rdfs:range :Contract .
+
+:contractRelatedTo a owl:ObjectProperty ;
+    rdfs:label "Contract Related To" ;
+    rdfs:domain :Contract ;
+    rdfs:range :Contract .
+
+# Party Relationships
+:partyHasObligation a owl:ObjectProperty ;
+    rdfs:label "Party Has Obligation" ;
+    rdfs:domain :Party ;
+    rdfs:range :Obligation .
+
+:partyHasRight a owl:ObjectProperty ;
+    rdfs:label "Party Has Right" ;
+    rdfs:domain :Party ;
+    rdfs:range :Right .
+
+:partyMakesPayment a owl:ObjectProperty ;
+    rdfs:label "Party Makes Payment" ;
+    rdfs:domain :Party ;
+    rdfs:range :Payment .
+
+:partyReceivesPayment a owl:ObjectProperty ;
+    rdfs:label "Party Receives Payment" ;
+    rdfs:domain :Party ;
+    rdfs:range :Payment .
+
+:partyDeliversTo a owl:ObjectProperty ;
+    rdfs:label "Party Delivers To" ;
+    rdfs:domain :Party ;
+    rdfs:range :Deliverable .
+
+:partyProvidesWarranty a owl:ObjectProperty ;
+    rdfs:label "Party Provides Warranty" ;
+    rdfs:domain :Party ;
+    rdfs:range :Warranty .
+
+:partyIndemnifies a owl:ObjectProperty ;
+    rdfs:label "Party Indemnifies" ;
+    rdfs:domain :Party ;
+    rdfs:range :Party .
+
+:partyRepresentedBy a owl:ObjectProperty ;
+    rdfs:label "Party Represented By" ;
+    rdfs:domain :Party ;
+    rdfs:range :Individual .
+
+:partySubsidiaryOf a owl:ObjectProperty ;
+    rdfs:label "Party Subsidiary Of" ;
+    rdfs:domain :Party ;
+    rdfs:range :LegalEntity .
+
+# Clause Relationships
+:clauseImposes a owl:ObjectProperty ;
+    rdfs:label "Clause Imposes" ;
+    rdfs:domain :Clause ;
+    rdfs:range :Obligation .
+
+:clauseGrants a owl:ObjectProperty ;
+    rdfs:label "Clause Grants" ;
+    rdfs:domain :Clause ;
+    rdfs:range :Right .
+
+:clauseDefines a owl:ObjectProperty ;
+    rdfs:label "Clause Defines" ;
+    rdfs:domain :Clause ;
+    rdfs:range :Term .
+
+:clauseReferences a owl:ObjectProperty ;
+    rdfs:label "Clause References" ;
+    rdfs:domain :Clause ;
+    rdfs:range [ owl:unionOf ( :Clause :Term :Exhibit ) ] .
+
+:clauseModifiedBy a owl:ObjectProperty ;
+    rdfs:label "Clause Modified By" ;
+    rdfs:domain :Clause ;
+    rdfs:range :Amendment .
+
+:clauseContainsCondition a owl:ObjectProperty ;
+    rdfs:label "Clause Contains Condition" ;
+    rdfs:domain :Clause ;
+    rdfs:range :Term .
+
+:clauseSpecifiesPenalty a owl:ObjectProperty ;
+    rdfs:label "Clause Specifies Penalty" ;
+    rdfs:domain :Clause ;
+    rdfs:range :Penalty .
+
+# Obligation and Rights Relationships
+:obligationTriggeredBy a owl:ObjectProperty ;
+    rdfs:label "Obligation Triggered By" ;
+    rdfs:domain :Obligation ;
+    rdfs:range [ owl:unionOf ( :Milestone :Term :Payment ) ] .
+
+:obligationDependsOn a owl:ObjectProperty ;
+    rdfs:label "Obligation Depends On" ;
+    rdfs:domain :Obligation ;
+    rdfs:range :Obligation .
+
+:rightConditionalOn a owl:ObjectProperty ;
+    rdfs:label "Right Conditional On" ;
+    rdfs:domain :Right ;
+    rdfs:range [ owl:unionOf ( :Obligation :Term :Payment ) ] .
+
+:rightLimitedBy a owl:ObjectProperty ;
+    rdfs:label "Right Limited By" ;
+    rdfs:domain :Right ;
+    rdfs:range :Clause .
+
+:obligationSecuredBy a owl:ObjectProperty ;
+    rdfs:label "Obligation Secured By" ;
+    rdfs:domain :Obligation ;
+    rdfs:range :Warranty .
+
+# Payment and Deliverable Relationships
+:paymentFor a owl:ObjectProperty ;
+    rdfs:label "Payment For" ;
+    rdfs:domain :Payment ;
+    rdfs:range :Deliverable .
+
+:paymentTriggeredBy a owl:ObjectProperty ;
+    rdfs:label "Payment Triggered By" ;
+    rdfs:domain :Payment ;
+    rdfs:range :Milestone .
+
+:paymentSubjectTo a owl:ObjectProperty ;
+    rdfs:label "Payment Subject To" ;
+    rdfs:domain :Payment ;
+    rdfs:range [ owl:unionOf ( :Term :Penalty ) ] .
+
+:deliverableRequires a owl:ObjectProperty ;
+    rdfs:label "Deliverable Requires" ;
+    rdfs:domain :Deliverable ;
+    rdfs:range :Deliverable .
+
+:deliverableAcceptedBy a owl:ObjectProperty ;
+    rdfs:label "Deliverable Accepted By" ;
+    rdfs:domain :Deliverable ;
+    rdfs:range :Party .
+
+:milestoneLeadsTo a owl:ObjectProperty ;
+    rdfs:label "Milestone Leads To" ;
+    rdfs:domain :Milestone ;
+    rdfs:range :Milestone .
+
+# Warranty and Indemnity Relationships
+:warrantyCovers a owl:ObjectProperty ;
+    rdfs:label "Warranty Covers" ;
+    rdfs:domain :Warranty ;
+    rdfs:range :Deliverable .
+
+:warrantyLimitedBy a owl:ObjectProperty ;
+    rdfs:label "Warranty Limited By" ;
+    rdfs:domain :Warranty ;
+    rdfs:range :Term .
+
+:indemnityCovers a owl:ObjectProperty ;
+    rdfs:label "Indemnity Covers" ;
+    rdfs:domain :Indemnity ;
+    rdfs:range [ owl:unionOf ( :Obligation :Right :Deliverable ) ] .
+
+:indemnityExcludes a owl:ObjectProperty ;
+    rdfs:label "Indemnity Excludes" ;
+    rdfs:domain :Indemnity ;
+    rdfs:range :Term .
+
+# Termination and Dispute Relationships
+:terminationTriggeredBy a owl:ObjectProperty ;
+    rdfs:label "Termination Triggered By" ;
+    rdfs:domain :Termination ;
+    rdfs:range [ owl:unionOf ( :Penalty :Dispute :Term ) ] .
+
+:terminationAffects a owl:ObjectProperty ;
+    rdfs:label "Termination Affects" ;
+    rdfs:domain :Termination ;
+    rdfs:range [ owl:unionOf ( :Obligation :Right :Payment ) ] .
+
+:disputeResolvedBy a owl:ObjectProperty ;
+    rdfs:label "Dispute Resolved By" ;
+    rdfs:domain :Dispute ;
+    rdfs:range :Jurisdiction .
+
+:disputeInvolves a owl:ObjectProperty ;
+    rdfs:label "Dispute Involves" ;
+    rdfs:domain :Dispute ;
+    rdfs:range :Party .
+
+:disputeRegarding a owl:ObjectProperty ;
+    rdfs:label "Dispute Regarding" ;
+    rdfs:domain :Dispute ;
+    rdfs:range [ owl:unionOf ( :Clause :Obligation :Payment ) ] .
+
+# Amendment and Exhibit Relationships
+:amendmentModifies a owl:ObjectProperty ;
+    rdfs:label "Amendment Modifies" ;
+    rdfs:domain :Amendment ;
+    rdfs:range [ owl:unionOf ( :Clause :Term :Payment ) ] .
+
+:amendmentSupersedes a owl:ObjectProperty ;
+    rdfs:label "Amendment Supersedes" ;
+    rdfs:domain :Amendment ;
+    rdfs:range :Amendment .
+
+:exhibitSupports a owl:ObjectProperty ;
+    rdfs:label "Exhibit Supports" ;
+    rdfs:domain :Exhibit ;
+    rdfs:range [ owl:unionOf ( :Clause :Term :Deliverable ) ] .
+
+:exhibitIncorporatedBy a owl:ObjectProperty ;
+    rdfs:label "Exhibit Incorporated By" ;
+    rdfs:domain :Exhibit ;
+    rdfs:range :Clause .
+
+# Signature Relationships
+:signatureBy a owl:ObjectProperty ;
+    rdfs:label "Signature By" ;
+    rdfs:domain :Signature ;
+    rdfs:range :Party .
+
+:signatureWitnessedBy a owl:ObjectProperty ;
+    rdfs:label "Signature Witnessed By" ;
+    rdfs:domain :Signature ;
+    rdfs:range :Individual .
+
+:signatureNotarizedBy a owl:ObjectProperty ;
+    rdfs:label "Signature Notarized By" ;
+    rdfs:domain :Signature ;
+    rdfs:range :Individual .
+
+# ============================================================================
+# ENHANCED DATA PROPERTIES
+# ============================================================================
+
+# Contract Properties
+:contractTitle a owl:DatatypeProperty ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:string .
+
+:contractType a owl:DatatypeProperty ;
+    rdfs:domain :Contract ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "service_agreement" "purchase_agreement" "employment" "lease" "license" "partnership" "merger" "acquisition" "nda" "consulting" )
+    ] .
+
+:contractNumber a owl:DatatypeProperty ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:string .
+
+:executionDate a owl:DatatypeProperty ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:date .
+
+:effectiveDate a owl:DatatypeProperty ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:date .
+
+:expirationDate a owl:DatatypeProperty ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:date .
+
+:contractValue a owl:DatatypeProperty ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:decimal .
+
+:currency a owl:DatatypeProperty ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:string .
+
+:contractStatus a owl:DatatypeProperty ;
+    rdfs:domain :Contract ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "draft" "under_review" "executed" "active" "expired" "terminated" "breached" )
+    ] .
+
+:renewalTerms a owl:DatatypeProperty ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:string .
+
+:autoRenewal a owl:DatatypeProperty ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:boolean .
+
+:confidential a owl:DatatypeProperty ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:boolean .
+
+:exclusivity a owl:DatatypeProperty ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:boolean .
+
+:assignable a owl:DatatypeProperty ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:boolean .
+
+:severability a owl:DatatypeProperty ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:boolean .
+
+# Party Properties
+:partyName a owl:DatatypeProperty ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:string .
+
+:partyType a owl:DatatypeProperty ;
+    rdfs:domain :Party ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "individual" "corporation" "llc" "partnership" "government" "non_profit" )
+    ] .
+
+:partyRole a owl:DatatypeProperty ;
+    rdfs:domain :Party ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "buyer" "seller" "vendor" "client" "contractor" "subcontractor" "licensor" "licensee" "employer" "employee" )
+    ] .
+
+:registrationNumber a owl:DatatypeProperty ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:string .
+
+:taxId a owl:DatatypeProperty ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:string .
+
+:address a owl:DatatypeProperty ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:string .
+
+:city a owl:DatatypeProperty ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:string .
+
+:state a owl:DatatypeProperty ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:string .
+
+:zipCode a owl:DatatypeProperty ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:string .
+
+:country a owl:DatatypeProperty ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:string .
+
+:contactPerson a owl:DatatypeProperty ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:string .
+
+:email a owl:DatatypeProperty ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:string .
+
+:phone a owl:DatatypeProperty ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:string .
+
+:website a owl:DatatypeProperty ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:anyURI .
+
+:incorporationDate a owl:DatatypeProperty ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:date .
+
+:incorporationJurisdiction a owl:DatatypeProperty ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:string .
+
+# Clause Properties
+:clauseNumber a owl:DatatypeProperty ;
+    rdfs:domain :Clause ;
+    rdfs:range xsd:string .
+
+:clauseTitle a owl:DatatypeProperty ;
+    rdfs:domain :Clause ;
+    rdfs:range xsd:string .
+
+:clauseType a owl:DatatypeProperty ;
+    rdfs:domain :Clause ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "payment" "delivery" "warranty" "indemnity" "termination" "dispute_resolution" "confidentiality" "intellectual_property" "force_majeure" )
+    ] .
+
+:clauseText a owl:DatatypeProperty ;
+    rdfs:domain :Clause ;
+    rdfs:range xsd:string .
+
+:mandatory a owl:DatatypeProperty ;
+    rdfs:domain :Clause ;
+    rdfs:range xsd:boolean .
+
+:negotiable a owl:DatatypeProperty ;
+    rdfs:domain :Clause ;
+    rdfs:range xsd:boolean .
+
+:standardClause a owl:DatatypeProperty ;
+    rdfs:domain :Clause ;
+    rdfs:range xsd:boolean .
+
+:clausePriority a owl:DatatypeProperty ;
+    rdfs:domain :Clause ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "low" "medium" "high" "critical" )
+    ] .
+
+# Obligation Properties
+:obligationDescription a owl:DatatypeProperty ;
+    rdfs:domain :Obligation ;
+    rdfs:range xsd:string .
+
+:obligationType a owl:DatatypeProperty ;
+    rdfs:domain :Obligation ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "payment" "delivery" "performance" "compliance" "reporting" "maintenance" "support" )
+    ] .
+
+:dueDate a owl:DatatypeProperty ;
+    rdfs:domain :Obligation ;
+    rdfs:range xsd:date .
+
+:frequency a owl:DatatypeProperty ;
+    rdfs:domain :Obligation ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "one_time" "daily" "weekly" "monthly" "quarterly" "annually" "as_needed" )
+    ] .
+
+:obligationStatus a owl:DatatypeProperty ;
+    rdfs:domain :Obligation ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "pending" "in_progress" "completed" "overdue" "waived" "disputed" )
+    ] .
+
+:enforceable a owl:DatatypeProperty ;
+    rdfs:domain :Obligation ;
+    rdfs:range xsd:boolean .
+
+:materialBreach a owl:DatatypeProperty ;
+    rdfs:domain :Obligation ;
+    rdfs:range xsd:boolean .
+
+:curePerio a owl:DatatypeProperty ;
+    rdfs:domain :Obligation ;
+    rdfs:range xsd:duration .
+
+# Payment Properties
+:paymentAmount a owl:DatatypeProperty ;
+    rdfs:domain :Payment ;
+    rdfs:range xsd:decimal .
+
+:paymentCurrency a owl:DatatypeProperty ;
+    rdfs:domain :Payment ;
+    rdfs:range xsd:string .
+
+:paymentType a owl:DatatypeProperty ;
+    rdfs:domain :Payment ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "lump_sum" "installment" "milestone" "recurring" "retainer" "penalty" "bonus" )
+    ] .
+
+:paymentMethod a owl:DatatypeProperty ;
+    rdfs:domain :Payment ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "wire_transfer" "check" "ach" "credit_card" "cash" "cryptocurrency" )
+    ] .
+
+:paymentTerms a owl:DatatypeProperty ;
+    rdfs:domain :Payment ;
+    rdfs:range xsd:string .
+
+:paymentDueDate a owl:DatatypeProperty ;
+    rdfs:domain :Payment ;
+    rdfs:range xsd:date .
+
+:lateFee a owl:DatatypeProperty ;
+    rdfs:domain :Payment ;
+    rdfs:range xsd:decimal .
+
+:interestRate a owl:DatatypeProperty ;
+    rdfs:domain :Payment ;
+    rdfs:range xsd:decimal .
+
+:discountRate a owl:DatatypeProperty ;
+    rdfs:domain :Payment ;
+    rdfs:range xsd:decimal .
+
+:earlyPaymentDiscount a owl:DatatypeProperty ;
+    rdfs:domain :Payment ;
+    rdfs:range xsd:decimal .
+
+:taxIncluded a owl:DatatypeProperty ;
+    rdfs:domain :Payment ;
+    rdfs:range xsd:boolean .
+
+:escrowRequired a owl:DatatypeProperty ;
+    rdfs:domain :Payment ;
+    rdfs:range xsd:boolean .
+
+# Deliverable Properties
+:deliverableName a owl:DatatypeProperty ;
+    rdfs:domain :Deliverable ;
+    rdfs:range xsd:string .
+
+:deliverableDescription a owl:DatatypeProperty ;
+    rdfs:domain :Deliverable ;
+    rdfs:range xsd:string .
+
+:deliverableType a owl:DatatypeProperty ;
+    rdfs:domain :Deliverable ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "product" "service" "software" "document" "report" "training" "consultation" )
+    ] .
+
+:deliveryDate a owl:DatatypeProperty ;
+    rdfs:domain :Deliverable ;
+    rdfs:range xsd:date .
+
+:deliveryLocation a owl:DatatypeProperty ;
+    rdfs:domain :Deliverable ;
+    rdfs:range xsd:string .
+
+:acceptanceCriteria a owl:DatatypeProperty ;
+    rdfs:domain :Deliverable ;
+    rdfs:range xsd:string .
+
+:acceptancePeriod a owl:DatatypeProperty ;
+    rdfs:domain :Deliverable ;
+    rdfs:range xsd:duration .
+
+:deliverableStatus a owl:DatatypeProperty ;
+    rdfs:domain :Deliverable ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "not_started" "in_progress" "completed" "delivered" "accepted" "rejected" )
+    ] .
+
+:qualityStandards a owl:DatatypeProperty ;
+    rdfs:domain :Deliverable ;
+    rdfs:range xsd:string .
+
+:intellectualPropertyRights a owl:DatatypeProperty ;
+    rdfs:domain :Deliverable ;
+    rdfs:range xsd:string .
+
+# Warranty Properties
+:warrantyDescription a owl:DatatypeProperty ;
+    rdfs:domain :Warranty ;
+    rdfs:range xsd:string .
+
+:warrantyType a owl:DatatypeProperty ;
+    rdfs:domain :Warranty ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "express" "implied" "fitness_for_purpose" "merchantability" "title" "non_infringement" )
+    ] .
+
+:warrantyPeriod a owl:DatatypeProperty ;
+    rdfs:domain :Warranty ;
+    rdfs:range xsd:duration .
+
+:warrantyStartDate a owl:DatatypeProperty ;
+    rdfs:domain :Warranty ;
+    rdfs:range xsd:date .
+
+:warrantyEndDate a owl:DatatypeProperty ;
+    rdfs:domain :Warranty ;
+    rdfs:range xsd:date .
+
+:remedyForBreach a owl:DatatypeProperty ;
+    rdfs:domain :Warranty ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "repair" "replace" "refund" "damages" "specific_performance" )
+    ] .
+
+:warrantyLimitations a owl:DatatypeProperty ;
+    rdfs:domain :Warranty ;
+    rdfs:range xsd:string .
+
+:warrantyExclusions a owl:DatatypeProperty ;
+    rdfs:domain :Warranty ;
+    rdfs:range xsd:string .
+
+# Termination Properties
+:terminationReason a owl:DatatypeProperty ;
+    rdfs:domain :Termination ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "breach" "convenience" "expiration" "mutual_agreement" "insolvency" "change_of_control" )
+    ] .
+
+:noticePeriod a owl:DatatypeProperty ;
+    rdfs:domain :Termination ;
+    rdfs:range xsd:duration .
+
+:terminationDate a owl:DatatypeProperty ;
+    rdfs:domain :Termination ;
+    rdfs:range xsd:date .
+
+:terminationFee a owl:DatatypeProperty ;
+    rdfs:domain :Termination ;
+    rdfs:range xsd:decimal .
+
+:survivalClauses a owl:DatatypeProperty ;
+    rdfs:domain :Termination ;
+    rdfs:range xsd:string .
+
+:returnOfProperty a owl:DatatypeProperty ;
+    rdfs:domain :Termination ;
+    rdfs:range xsd:boolean .
+
+:postTerminationObligations a owl:DatatypeProperty ;
+    rdfs:domain :Termination ;
+    rdfs:range xsd:string .
+
+# Dispute Properties
+:disputeType a owl:DatatypeProperty ;
+    rdfs:domain :Dispute ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "breach" "payment" "performance" "interpretation" "termination" "intellectual_property" )
+    ] .
+
+:resolutionMethod a owl:DatatypeProperty ;
+    rdfs:domain :Dispute ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "negotiation" "mediation" "arbitration" "litigation" "expert_determination" )
+    ] .
+
+:governingLaw a owl:DatatypeProperty ;
+    rdfs:domain :Dispute ;
+    rdfs:range xsd:string .
+
+:venue a owl:DatatypeProperty ;
+    rdfs:domain :Dispute ;
+    rdfs:range xsd:string .
+
+:arbitrationRules a owl:DatatypeProperty ;
+    rdfs:domain :Dispute ;
+    rdfs:range xsd:string .
+
+:mediatorSelection a owl:DatatypeProperty ;
+    rdfs:domain :Dispute ;
+    rdfs:range xsd:string .
+
+:costAllocation a owl:DatatypeProperty ;
+    rdfs:domain :Dispute ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "each_pays_own" "loser_pays_all" "split_equally" "as_determined" )
+    ] .
+
+:confidentialProceedings a owl:DatatypeProperty ;
+    rdfs:domain :Dispute ;
+    rdfs:range xsd:boolean .
+
+# Signature Properties
+:signatureDate a owl:DatatypeProperty ;
+    rdfs:domain :Signature ;
+    rdfs:range xsd:date .
+
+:signatureLocation a owl:DatatypeProperty ;
+    rdfs:domain :Signature ;
+    rdfs:range xsd:string .
+
+:signatureType a owl:DatatypeProperty ;
+    rdfs:domain :Signature ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "wet_signature" "electronic" "digital" "docusign" "adobe_sign" )
+    ] .
+
+:signerName a owl:DatatypeProperty ;
+    rdfs:domain :Signature ;
+    rdfs:range xsd:string .
+
+:signerTitle a owl:DatatypeProperty ;
+    rdfs:domain :Signature ;
+    rdfs:range xsd:string .
+
+:authorityToSign a owl:DatatypeProperty ;
+    rdfs:domain :Signature ;
+    rdfs:range xsd:boolean .
+
+:witnessRequired a owl:DatatypeProperty ;
+    rdfs:domain :Signature ;
+    rdfs:range xsd:boolean .
+
+:notarizationRequired a owl:DatatypeProperty ;
+    rdfs:domain :Signature ;
+    rdfs:range xsd:boolean .
+
+:signatureValid a owl:DatatypeProperty ;
+    rdfs:domain :Signature ;
+    rdfs:range xsd:boolean .

@@ -1,0 +1,183 @@
+/* Workspace Selector - Minimal */
+
+.workspace-selector {
+  position: relative;
+  margin: 8px;
+}
+
+.workspace-selector.compact {
+  margin: 4px;
+}
+
+.ws-current {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+
+.ws-current:hover {
+  background: #f5f5f5;
+}
+
+.compact .ws-current {
+  padding: 6px 10px;
+  justify-content: center;
+}
+
+.ws-icon {
+  font-size: 1.1em;
+}
+
+.ws-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+
+.ws-tenant {
+  font-weight: 500;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-workspace {
+  font-size: 11px;
+  color: #555;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-arrow {
+  font-size: 10px;
+  color: #555;
+}
+
+.ws-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.ws-section {
+  padding: 8px;
+  border-bottom: 1px solid #eee;
+}
+
+.ws-section:last-child {
+  border-bottom: none;
+}
+
+.ws-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #555;
+}
+
+.ws-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ws-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ws-item:hover {
+  background: #f5f5f5;
+}
+
+.ws-item.active {
+  background: #f0f0f0;
+  font-weight: 500;
+}
+
+.ws-item-name {
+  font-size: 13px;
+}
+
+.ws-item-count,
+.ws-item-industry {
+  font-size: 11px;
+  color: #555;
+  background: #f5f5f5;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.ws-empty {
+  padding: 12px;
+  text-align: center;
+  font-size: 12px;
+  color: #555;
+}
+
+.ws-no-tenant {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #555;
+  text-align: center;
+}
+
+.ws-footer {
+  padding: 8px 12px;
+  border-top: 1px solid #eee;
+  text-align: center;
+  background: #fafafa;
+}
+
+.ws-footer-hint {
+  font-size: 10px;
+  color: #666;
+}
+
+.ws-loading {
+  padding: 8px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: #555;
+}
+
+.workspace-selector.ws-warning .ws-current {
+  border-color: #c90;
+}
+
+.ws-workspace.warning-text {
+  color: #c90;
+  font-weight: 500;
+}

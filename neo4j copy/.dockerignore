@@ -1,0 +1,11 @@
+node_modules
+client/node_modules
+client/build
+.env
+.git
+.DS_Store
+*.log
+uploads
+.kiro
+.vscode
+.github

@@ -1,0 +1,95 @@
+name: Auto-Update Development Guidelines
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'server/**'
+      - 'client/**'
+      - 'package.json'
+      - '.env.template'
+
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/**'
+      - 'client/**'
+      - 'package.json'
+
+jobs:
+  update-guidelines:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Analyze codebase changes
+      id: analyze
+      run: |
+        # Check what files changed
+        CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+        echo "changed_files=$CHANGED_FILES" >> $GITHUB_OUTPUT
+        
+        # Check if architectural files changed
+        if echo "$CHANGED_FILES" | grep -E "(server/|package\.json|\.env\.template)"; then
+          echo "needs_update=true" >> $GITHUB_OUTPUT
+        else
+          echo "needs_update=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Update guidelines
+      if: steps.analyze.outputs.needs_update == 'true'
+      run: |
+        echo "🔍 Architectural changes detected, updating guidelines..."
+        node scripts/update-guidelines.js
+        
+        # Check if guidelines were actually modified
+        if git diff --quiet DEVELOPMENT_GUIDELINES.md; then
+          echo "guidelines_changed=false" >> $GITHUB_OUTPUT
+        else
+          echo "guidelines_changed=true" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Commit updated guidelines
+      if: steps.analyze.outputs.needs_update == 'true' && env.guidelines_changed == 'true'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add DEVELOPMENT_GUIDELINES.md
+        git commit -m "📋 Auto-update development guidelines
+        
+        - Updated based on codebase changes
+        - Detected new patterns in: ${{ steps.analyze.outputs.changed_files }}
+        - Auto-generated on $(date)"
+
+    - name: Push changes
+      if: steps.analyze.outputs.needs_update == 'true' && env.guidelines_changed == 'true'
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: ${{ github.ref }}
+
+    - name: Create PR comment
+      if: github.event_name == 'pull_request' && steps.analyze.outputs.needs_update == 'true'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: '📋 **Development Guidelines Update**\n\nThis PR includes architectural changes that may require guidelines updates. Please review the auto-generated changes to `DEVELOPMENT_GUIDELINES.md`.\n\n**Changed files:**\n```\n${{ steps.analyze.outputs.changed_files }}\n```'
+          });

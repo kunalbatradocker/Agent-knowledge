@@ -1,0 +1,828 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix : <http://purplefabric.ai/aml#> .
+
+# Ontology Declaration
+:AMLOntology a owl:Ontology ;
+    rdfs:label "Enhanced Anti-Money Laundering Ontology" ;
+    rdfs:comment "High-standard AML ontology with comprehensive compliance relationships and regulatory requirements" ;
+    owl:versionInfo "2.0" .
+
+# ============================================================================
+# CLASSES
+# ============================================================================
+
+:SuspiciousActivity a owl:Class ;
+    rdfs:label "Suspicious Activity" ;
+    rdfs:comment "Suspicious activity requiring investigation" .
+
+:RiskIndicator a owl:Class ;
+    rdfs:label "Risk Indicator" ;
+    rdfs:comment "Risk factor or red flag in transactions" .
+
+:Investigation a owl:Class ;
+    rdfs:label "Investigation" ;
+    rdfs:comment "AML investigation case with findings" .
+
+:SanctionedEntity a owl:Class ;
+    rdfs:label "Sanctioned Entity" ;
+    rdfs:comment "Entity on sanctions or watchlists" .
+
+:PEP a owl:Class ;
+    rdfs:label "PEP" ;
+    rdfs:comment "Politically Exposed Person with enhanced due diligence" .
+
+:Jurisdiction a owl:Class ;
+    rdfs:label "Jurisdiction" ;
+    rdfs:comment "Geographic jurisdiction with AML implications" .
+
+:ComplianceRule a owl:Class ;
+    rdfs:label "Compliance Rule" ;
+    rdfs:comment "AML regulation or compliance requirement" .
+
+:Alert a owl:Class ;
+    rdfs:label "Alert" ;
+    rdfs:comment "Automated AML system alert" .
+
+:Report a owl:Class ;
+    rdfs:label "Report" ;
+    rdfs:comment "Regulatory report (SAR, CTR, FBAR)" .
+
+:Watchlist a owl:Class ;
+    rdfs:label "Watchlist" ;
+    rdfs:comment "Sanctions or monitoring list" .
+
+:RiskAssessment a owl:Class ;
+    rdfs:label "Risk Assessment" ;
+    rdfs:comment "Customer or transaction risk evaluation" .
+
+:ComplianceOfficer a owl:Class ;
+    rdfs:label "Compliance Officer" ;
+    rdfs:comment "AML compliance staff member" .
+
+:AuditTrail a owl:Class ;
+    rdfs:label "Audit Trail" ;
+    rdfs:comment "Record of compliance actions and decisions" .
+
+:TrainingRecord a owl:Class ;
+    rdfs:label "Training Record" ;
+    rdfs:comment "AML training completion record" .
+
+:PolicyDocument a owl:Class ;
+    rdfs:label "Policy Document" ;
+    rdfs:comment "AML policy or procedure document" .
+
+:Typology a owl:Class ;
+    rdfs:label "Typology" ;
+    rdfs:comment "Money laundering method or pattern" .
+
+# ============================================================================
+# ENHANCED OBJECT PROPERTIES
+# ============================================================================
+
+# Suspicious Activity Relationships
+:activityTriggeredBy a owl:ObjectProperty ;
+    rdfs:label "Activity Triggered By" ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range :RiskIndicator .
+
+:activityInvolvesCustomer a owl:ObjectProperty ;
+    rdfs:label "Activity Involves Customer" ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range :Customer .
+
+:activityInvolvesAccount a owl:ObjectProperty ;
+    rdfs:label "Activity Involves Account" ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range :Account .
+
+:activityInvolvesTransaction a owl:ObjectProperty ;
+    rdfs:label "Activity Involves Transaction" ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range :Transaction .
+
+:activityMatchesTypology a owl:ObjectProperty ;
+    rdfs:label "Activity Matches Typology" ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range :Typology .
+
+:activityInvestigatedBy a owl:ObjectProperty ;
+    rdfs:label "Activity Investigated By" ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range :Investigation .
+
+:activityReportedIn a owl:ObjectProperty ;
+    rdfs:label "Activity Reported In" ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range :Report .
+
+:activityRelatedTo a owl:ObjectProperty ;
+    rdfs:label "Activity Related To" ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range :SuspiciousActivity .
+
+# Investigation Relationships
+:investigationAssignedTo a owl:ObjectProperty ;
+    rdfs:label "Investigation Assigned To" ;
+    rdfs:domain :Investigation ;
+    rdfs:range :ComplianceOfficer .
+
+:investigationCovers a owl:ObjectProperty ;
+    rdfs:label "Investigation Covers" ;
+    rdfs:domain :Investigation ;
+    rdfs:range [ owl:unionOf ( :Customer :Account :Transaction :SuspiciousActivity ) ] .
+
+:investigationResultsIn a owl:ObjectProperty ;
+    rdfs:label "Investigation Results In" ;
+    rdfs:domain :Investigation ;
+    rdfs:range :Report .
+
+:investigationFollowsUp a owl:ObjectProperty ;
+    rdfs:label "Investigation Follows Up" ;
+    rdfs:domain :Investigation ;
+    rdfs:range :Investigation .
+
+:investigationReferencesRule a owl:ObjectProperty ;
+    rdfs:label "Investigation References Rule" ;
+    rdfs:domain :Investigation ;
+    rdfs:range :ComplianceRule .
+
+:investigationCreatesAuditTrail a owl:ObjectProperty ;
+    rdfs:label "Investigation Creates Audit Trail" ;
+    rdfs:domain :Investigation ;
+    rdfs:range :AuditTrail .
+
+# Customer Risk Relationships
+:customerMatchesWatchlist a owl:ObjectProperty ;
+    rdfs:label "Customer Matches Watchlist" ;
+    rdfs:domain :Customer ;
+    rdfs:range :Watchlist .
+
+:customerIsPEP a owl:ObjectProperty ;
+    rdfs:label "Customer Is PEP" ;
+    rdfs:domain :Customer ;
+    rdfs:range :PEP .
+
+:customerRelatedToSanctioned a owl:ObjectProperty ;
+    rdfs:label "Customer Related To Sanctioned" ;
+    rdfs:domain :Customer ;
+    rdfs:range :SanctionedEntity .
+
+:customerHasRiskAssessment a owl:ObjectProperty ;
+    rdfs:label "Customer Has Risk Assessment" ;
+    rdfs:domain :Customer ;
+    rdfs:range :RiskAssessment .
+
+:customerInJurisdiction a owl:ObjectProperty ;
+    rdfs:label "Customer In Jurisdiction" ;
+    rdfs:domain :Customer ;
+    rdfs:range :Jurisdiction .
+
+:customerMonitoredBy a owl:ObjectProperty ;
+    rdfs:label "Customer Monitored By" ;
+    rdfs:domain :Customer ;
+    rdfs:range :ComplianceOfficer .
+
+# Transaction Monitoring Relationships
+:transactionFlagged a owl:ObjectProperty ;
+    rdfs:label "Transaction Flagged" ;
+    rdfs:domain :Transaction ;
+    rdfs:range :Alert .
+
+:transactionViolatesRule a owl:ObjectProperty ;
+    rdfs:label "Transaction Violates Rule" ;
+    rdfs:domain :Transaction ;
+    rdfs:range :ComplianceRule .
+
+:transactionInHighRiskJurisdiction a owl:ObjectProperty ;
+    rdfs:label "Transaction In High Risk Jurisdiction" ;
+    rdfs:domain :Transaction ;
+    rdfs:range :Jurisdiction .
+
+:transactionPartOfPattern a owl:ObjectProperty ;
+    rdfs:label "Transaction Part Of Pattern" ;
+    rdfs:domain :Transaction ;
+    rdfs:range :SuspiciousActivity .
+
+:transactionExceedsThreshold a owl:ObjectProperty ;
+    rdfs:label "Transaction Exceeds Threshold" ;
+    rdfs:domain :Transaction ;
+    rdfs:range :ComplianceRule .
+
+# Alert and Report Relationships
+:alertGeneratedBy a owl:ObjectProperty ;
+    rdfs:label "Alert Generated By" ;
+    rdfs:domain :Alert ;
+    rdfs:range [ owl:unionOf ( :Transaction :Customer :Account ) ] .
+
+:alertAssignedTo a owl:ObjectProperty ;
+    rdfs:label "Alert Assigned To" ;
+    rdfs:domain :Alert ;
+    rdfs:range :ComplianceOfficer .
+
+:alertEscalatedTo a owl:ObjectProperty ;
+    rdfs:label "Alert Escalated To" ;
+    rdfs:domain :Alert ;
+    rdfs:range :Investigation .
+
+:alertClosedBy a owl:ObjectProperty ;
+    rdfs:label "Alert Closed By" ;
+    rdfs:domain :Alert ;
+    rdfs:range :ComplianceOfficer .
+
+:reportFiledBy a owl:ObjectProperty ;
+    rdfs:label "Report Filed By" ;
+    rdfs:domain :Report ;
+    rdfs:range :ComplianceOfficer .
+
+:reportSubmittedTo a owl:ObjectProperty ;
+    rdfs:label "Report Submitted To" ;
+    rdfs:domain :Report ;
+    rdfs:range :Jurisdiction .
+
+:reportCovers a owl:ObjectProperty ;
+    rdfs:label "Report Covers" ;
+    rdfs:domain :Report ;
+    rdfs:range [ owl:unionOf ( :SuspiciousActivity :Customer :Transaction ) ] .
+
+# Sanctions and Watchlist Relationships
+:sanctionedEntityOnWatchlist a owl:ObjectProperty ;
+    rdfs:label "Sanctioned Entity On Watchlist" ;
+    rdfs:domain :SanctionedEntity ;
+    rdfs:range :Watchlist .
+
+:watchlistMaintainedBy a owl:ObjectProperty ;
+    rdfs:label "Watchlist Maintained By" ;
+    rdfs:domain :Watchlist ;
+    rdfs:range :Jurisdiction .
+
+:pepAssociatedWith a owl:ObjectProperty ;
+    rdfs:label "PEP Associated With" ;
+    rdfs:domain :PEP ;
+    rdfs:range [ owl:unionOf ( :Customer :Jurisdiction ) ] .
+
+:pepRequiresEnhancedDueDiligence a owl:ObjectProperty ;
+    rdfs:label "PEP Requires Enhanced Due Diligence" ;
+    rdfs:domain :PEP ;
+    rdfs:range :RiskAssessment .
+
+# Compliance and Training Relationships
+:officerResponsibleFor a owl:ObjectProperty ;
+    rdfs:label "Officer Responsible For" ;
+    rdfs:domain :ComplianceOfficer ;
+    rdfs:range [ owl:unionOf ( :Customer :Investigation :Alert :Report ) ] .
+
+:officerCompletedTraining a owl:ObjectProperty ;
+    rdfs:label "Officer Completed Training" ;
+    rdfs:domain :ComplianceOfficer ;
+    rdfs:range :TrainingRecord .
+
+:ruleImplementedBy a owl:ObjectProperty ;
+    rdfs:label "Rule Implemented By" ;
+    rdfs:domain :ComplianceRule ;
+    rdfs:range :PolicyDocument .
+
+:ruleRequiredBy a owl:ObjectProperty ;
+    rdfs:label "Rule Required By" ;
+    rdfs:domain :ComplianceRule ;
+    rdfs:range :Jurisdiction .
+
+:auditTrailReferences a owl:ObjectProperty ;
+    rdfs:label "Audit Trail References" ;
+    rdfs:domain :AuditTrail ;
+    rdfs:range [ owl:unionOf ( :Investigation :Alert :Report :ComplianceRule ) ] .
+
+# Risk Assessment Relationships
+:riskAssessmentPerformedBy a owl:ObjectProperty ;
+    rdfs:label "Risk Assessment Performed By" ;
+    rdfs:domain :RiskAssessment ;
+    rdfs:range :ComplianceOfficer .
+
+:riskAssessmentBasedOn a owl:ObjectProperty ;
+    rdfs:label "Risk Assessment Based On" ;
+    rdfs:domain :RiskAssessment ;
+    rdfs:range [ owl:unionOf ( :RiskIndicator :Transaction :SuspiciousActivity ) ] .
+
+:riskAssessmentUpdatedBy a owl:ObjectProperty ;
+    rdfs:label "Risk Assessment Updated By" ;
+    rdfs:domain :RiskAssessment ;
+    rdfs:range :Investigation .
+
+# ============================================================================
+# ENHANCED DATA PROPERTIES
+# ============================================================================
+
+# Suspicious Activity Properties
+:activityId a owl:DatatypeProperty ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range xsd:string .
+
+:activityType a owl:DatatypeProperty ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "structuring" "unusual_pattern" "high_risk_jurisdiction" "sanctions_match" "pep_activity" "cash_intensive" "rapid_movement" "shell_company" )
+    ] .
+
+:detectionDate a owl:DatatypeProperty ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range xsd:dateTime .
+
+:activityDescription a owl:DatatypeProperty ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range xsd:string .
+
+:suspicionLevel a owl:DatatypeProperty ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "low" "medium" "high" "critical" )
+    ] .
+
+:activityStatus a owl:DatatypeProperty ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "detected" "under_review" "investigated" "reported" "closed" "false_positive" )
+    ] .
+
+:totalAmount a owl:DatatypeProperty ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range xsd:decimal .
+
+:transactionCount a owl:DatatypeProperty ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range xsd:integer .
+
+:timeSpan a owl:DatatypeProperty ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range xsd:duration .
+
+:geographicSpread a owl:DatatypeProperty ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range xsd:string .
+
+:confidenceScore a owl:DatatypeProperty ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range xsd:decimal .
+
+# Risk Indicator Properties
+:indicatorName a owl:DatatypeProperty ;
+    rdfs:domain :RiskIndicator ;
+    rdfs:range xsd:string .
+
+:indicatorType a owl:DatatypeProperty ;
+    rdfs:domain :RiskIndicator ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "transaction_based" "customer_based" "geographic" "behavioral" "temporal" "network_based" )
+    ] .
+
+:threshold a owl:DatatypeProperty ;
+    rdfs:domain :RiskIndicator ;
+    rdfs:range xsd:decimal .
+
+:weight a owl:DatatypeProperty ;
+    rdfs:domain :RiskIndicator ;
+    rdfs:range xsd:decimal .
+
+:indicatorDescription a owl:DatatypeProperty ;
+    rdfs:domain :RiskIndicator ;
+    rdfs:range xsd:string .
+
+:isActive a owl:DatatypeProperty ;
+    rdfs:domain :RiskIndicator ;
+    rdfs:range xsd:boolean .
+
+:lastTriggered a owl:DatatypeProperty ;
+    rdfs:domain :RiskIndicator ;
+    rdfs:range xsd:dateTime .
+
+:falsePositiveRate a owl:DatatypeProperty ;
+    rdfs:domain :RiskIndicator ;
+    rdfs:range xsd:decimal .
+
+# Investigation Properties
+:investigationId a owl:DatatypeProperty ;
+    rdfs:domain :Investigation ;
+    rdfs:range xsd:string .
+
+:investigationStatus a owl:DatatypeProperty ;
+    rdfs:domain :Investigation ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "open" "in_progress" "pending_review" "closed_substantiated" "closed_unsubstantiated" "escalated" )
+    ] .
+
+:openDate a owl:DatatypeProperty ;
+    rdfs:domain :Investigation ;
+    rdfs:range xsd:date .
+
+:closeDate a owl:DatatypeProperty ;
+    rdfs:domain :Investigation ;
+    rdfs:range xsd:date .
+
+:investigationPriority a owl:DatatypeProperty ;
+    rdfs:domain :Investigation ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "low" "medium" "high" "urgent" )
+    ] .
+
+:findings a owl:DatatypeProperty ;
+    rdfs:domain :Investigation ;
+    rdfs:range xsd:string .
+
+:recommendation a owl:DatatypeProperty ;
+    rdfs:domain :Investigation ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "no_action" "enhanced_monitoring" "file_sar" "close_account" "escalate" "refer_law_enforcement" )
+    ] .
+
+:investigationNotes a owl:DatatypeProperty ;
+    rdfs:domain :Investigation ;
+    rdfs:range xsd:string .
+
+:hoursSpent a owl:DatatypeProperty ;
+    rdfs:domain :Investigation ;
+    rdfs:range xsd:decimal .
+
+:evidenceCollected a owl:DatatypeProperty ;
+    rdfs:domain :Investigation ;
+    rdfs:range xsd:string .
+
+:reviewedBy a owl:DatatypeProperty ;
+    rdfs:domain :Investigation ;
+    rdfs:range xsd:string .
+
+:approvedBy a owl:DatatypeProperty ;
+    rdfs:domain :Investigation ;
+    rdfs:range xsd:string .
+
+# Alert Properties
+:alertId a owl:DatatypeProperty ;
+    rdfs:domain :Alert ;
+    rdfs:range xsd:string .
+
+:alertType a owl:DatatypeProperty ;
+    rdfs:domain :Alert ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "transaction_monitoring" "sanctions_screening" "pep_screening" "threshold_breach" "pattern_detection" "name_screening" )
+    ] .
+
+:alertSeverity a owl:DatatypeProperty ;
+    rdfs:domain :Alert ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "low" "medium" "high" "critical" )
+    ] .
+
+:generatedDate a owl:DatatypeProperty ;
+    rdfs:domain :Alert ;
+    rdfs:range xsd:dateTime .
+
+:alertStatus a owl:DatatypeProperty ;
+    rdfs:domain :Alert ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "new" "assigned" "in_review" "escalated" "closed_valid" "closed_false_positive" )
+    ] .
+
+:alertDescription a owl:DatatypeProperty ;
+    rdfs:domain :Alert ;
+    rdfs:range xsd:string .
+
+:matchScore a owl:DatatypeProperty ;
+    rdfs:domain :Alert ;
+    rdfs:range xsd:decimal .
+
+:reviewDeadline a owl:DatatypeProperty ;
+    rdfs:domain :Alert ;
+    rdfs:range xsd:date .
+
+:resolutionNotes a owl:DatatypeProperty ;
+    rdfs:domain :Alert ;
+    rdfs:range xsd:string .
+
+:escalationReason a owl:DatatypeProperty ;
+    rdfs:domain :Alert ;
+    rdfs:range xsd:string .
+
+# Report Properties
+:reportId a owl:DatatypeProperty ;
+    rdfs:domain :Report ;
+    rdfs:range xsd:string .
+
+:reportType a owl:DatatypeProperty ;
+    rdfs:domain :Report ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "SAR" "CTR" "FBAR" "8300" "suspicious_activity" "currency_transaction" "foreign_account" )
+    ] .
+
+:filingDate a owl:DatatypeProperty ;
+    rdfs:domain :Report ;
+    rdfs:range xsd:date .
+
+:reportingPeriod a owl:DatatypeProperty ;
+    rdfs:domain :Report ;
+    rdfs:range xsd:string .
+
+:reportStatus a owl:DatatypeProperty ;
+    rdfs:domain :Report ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "draft" "pending_review" "approved" "filed" "acknowledged" "rejected" )
+    ] .
+
+:reportNarrative a owl:DatatypeProperty ;
+    rdfs:domain :Report ;
+    rdfs:range xsd:string .
+
+:regulatoryReference a owl:DatatypeProperty ;
+    rdfs:domain :Report ;
+    rdfs:range xsd:string .
+
+:filingDeadline a owl:DatatypeProperty ;
+    rdfs:domain :Report ;
+    rdfs:range xsd:date .
+
+:amendmentFlag a owl:DatatypeProperty ;
+    rdfs:domain :Report ;
+    rdfs:range xsd:boolean .
+
+:continuingActivity a owl:DatatypeProperty ;
+    rdfs:domain :Report ;
+    rdfs:range xsd:boolean .
+
+# Sanctioned Entity Properties
+:entityName a owl:DatatypeProperty ;
+    rdfs:domain :SanctionedEntity ;
+    rdfs:range xsd:string .
+
+:entityType a owl:DatatypeProperty ;
+    rdfs:domain :SanctionedEntity ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "individual" "entity" "vessel" "aircraft" "organization" )
+    ] .
+
+:sanctionProgram a owl:DatatypeProperty ;
+    rdfs:domain :SanctionedEntity ;
+    rdfs:range xsd:string .
+
+:listingDate a owl:DatatypeProperty ;
+    rdfs:domain :SanctionedEntity ;
+    rdfs:range xsd:date .
+
+:sanctionType a owl:DatatypeProperty ;
+    rdfs:domain :SanctionedEntity ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "blocking" "sectoral" "non_sdn" "specially_designated" )
+    ] .
+
+:aliases a owl:DatatypeProperty ;
+    rdfs:domain :SanctionedEntity ;
+    rdfs:range xsd:string .
+
+:addresses a owl:DatatypeProperty ;
+    rdfs:domain :SanctionedEntity ;
+    rdfs:range xsd:string .
+
+:identificationNumbers a owl:DatatypeProperty ;
+    rdfs:domain :SanctionedEntity ;
+    rdfs:range xsd:string .
+
+:sanctionReason a owl:DatatypeProperty ;
+    rdfs:domain :SanctionedEntity ;
+    rdfs:range xsd:string .
+
+# PEP Properties
+:pepName a owl:DatatypeProperty ;
+    rdfs:domain :PEP ;
+    rdfs:range xsd:string .
+
+:politicalPosition a owl:DatatypeProperty ;
+    rdfs:domain :PEP ;
+    rdfs:range xsd:string .
+
+:pepType a owl:DatatypeProperty ;
+    rdfs:domain :PEP ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "foreign_pep" "domestic_pep" "international_organization" "family_member" "close_associate" )
+    ] .
+
+:pepCountry a owl:DatatypeProperty ;
+    rdfs:domain :PEP ;
+    rdfs:range xsd:string .
+
+:positionStartDate a owl:DatatypeProperty ;
+    rdfs:domain :PEP ;
+    rdfs:range xsd:date .
+
+:positionEndDate a owl:DatatypeProperty ;
+    rdfs:domain :PEP ;
+    rdfs:range xsd:date .
+
+:pepStatus a owl:DatatypeProperty ;
+    rdfs:domain :PEP ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "current" "former" "family" "associate" )
+    ] .
+
+:riskLevel a owl:DatatypeProperty ;
+    rdfs:domain :PEP ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "low" "medium" "high" "very_high" )
+    ] .
+
+:enhancedDueDiligenceRequired a owl:DatatypeProperty ;
+    rdfs:domain :PEP ;
+    rdfs:range xsd:boolean .
+
+# Jurisdiction Properties
+:jurisdictionName a owl:DatatypeProperty ;
+    rdfs:domain :Jurisdiction ;
+    rdfs:range xsd:string .
+
+:jurisdictionCode a owl:DatatypeProperty ;
+    rdfs:domain :Jurisdiction ;
+    rdfs:range xsd:string .
+
+:jurisdictionType a owl:DatatypeProperty ;
+    rdfs:domain :Jurisdiction ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "country" "state" "province" "territory" "region" )
+    ] .
+
+:riskRating a owl:DatatypeProperty ;
+    rdfs:domain :Jurisdiction ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "low" "medium" "high" "very_high" )
+    ] .
+
+:fatfMember a owl:DatatypeProperty ;
+    rdfs:domain :Jurisdiction ;
+    rdfs:range xsd:boolean .
+
+:fatfGreyList a owl:DatatypeProperty ;
+    rdfs:domain :Jurisdiction ;
+    rdfs:range xsd:boolean .
+
+:fatfBlackList a owl:DatatypeProperty ;
+    rdfs:domain :Jurisdiction ;
+    rdfs:range xsd:boolean .
+
+:bankSecrecyAct a owl:DatatypeProperty ;
+    rdfs:domain :Jurisdiction ;
+    rdfs:range xsd:boolean .
+
+:taxHaven a owl:DatatypeProperty ;
+    rdfs:domain :Jurisdiction ;
+    rdfs:range xsd:boolean .
+
+:corruptionIndex a owl:DatatypeProperty ;
+    rdfs:domain :Jurisdiction ;
+    rdfs:range xsd:integer .
+
+:amlRegime a owl:DatatypeProperty ;
+    rdfs:domain :Jurisdiction ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "strong" "adequate" "weak" "non_existent" )
+    ] .
+
+# Compliance Rule Properties
+:ruleName a owl:DatatypeProperty ;
+    rdfs:domain :ComplianceRule ;
+    rdfs:range xsd:string .
+
+:ruleType a owl:DatatypeProperty ;
+    rdfs:domain :ComplianceRule ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "transaction_monitoring" "customer_screening" "reporting" "record_keeping" "training" "due_diligence" )
+    ] .
+
+:regulatorySource a owl:DatatypeProperty ;
+    rdfs:domain :ComplianceRule ;
+    rdfs:range xsd:string .
+
+:effectiveDate a owl:DatatypeProperty ;
+    rdfs:domain :ComplianceRule ;
+    rdfs:range xsd:date .
+
+:ruleDescription a owl:DatatypeProperty ;
+    rdfs:domain :ComplianceRule ;
+    rdfs:range xsd:string .
+
+:penaltyAmount a owl:DatatypeProperty ;
+    rdfs:domain :ComplianceRule ;
+    rdfs:range xsd:decimal .
+
+:complianceFrequency a owl:DatatypeProperty ;
+    rdfs:domain :ComplianceRule ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "real_time" "daily" "weekly" "monthly" "quarterly" "annually" )
+    ] .
+
+:automationLevel a owl:DatatypeProperty ;
+    rdfs:domain :ComplianceRule ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "fully_automated" "semi_automated" "manual" )
+    ] .
+
+# Risk Assessment Properties
+:assessmentId a owl:DatatypeProperty ;
+    rdfs:domain :RiskAssessment ;
+    rdfs:range xsd:string .
+
+:assessmentDate a owl:DatatypeProperty ;
+    rdfs:domain :RiskAssessment ;
+    rdfs:range xsd:date .
+
+:assessmentType a owl:DatatypeProperty ;
+    rdfs:domain :RiskAssessment ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "customer_risk" "transaction_risk" "product_risk" "geographic_risk" "institutional_risk" )
+    ] .
+
+:overallRiskScore a owl:DatatypeProperty ;
+    rdfs:domain :RiskAssessment ;
+    rdfs:range xsd:decimal .
+
+:riskCategory a owl:DatatypeProperty ;
+    rdfs:domain :RiskAssessment ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "low" "medium" "high" "prohibited" )
+    ] .
+
+:nextReviewDate a owl:DatatypeProperty ;
+    rdfs:domain :RiskAssessment ;
+    rdfs:range xsd:date .
+
+:assessmentNotes a owl:DatatypeProperty ;
+    rdfs:domain :RiskAssessment ;
+    rdfs:range xsd:string .
+
+:mitigatingFactors a owl:DatatypeProperty ;
+    rdfs:domain :RiskAssessment ;
+    rdfs:range xsd:string .
+
+:aggravatingFactors a owl:DatatypeProperty ;
+    rdfs:domain :RiskAssessment ;
+    rdfs:range xsd:string .
+
+# Compliance Officer Properties
+:officerId a owl:DatatypeProperty ;
+    rdfs:domain :ComplianceOfficer ;
+    rdfs:range xsd:string .
+
+:officerName a owl:DatatypeProperty ;
+    rdfs:domain :ComplianceOfficer ;
+    rdfs:range xsd:string .
+
+:officerTitle a owl:DatatypeProperty ;
+    rdfs:domain :ComplianceOfficer ;
+    rdfs:range xsd:string .
+
+:certifications a owl:DatatypeProperty ;
+    rdfs:domain :ComplianceOfficer ;
+    rdfs:range xsd:string .
+
+:experienceYears a owl:DatatypeProperty ;
+    rdfs:domain :ComplianceOfficer ;
+    rdfs:range xsd:integer .
+
+:specializations a owl:DatatypeProperty ;
+    rdfs:domain :ComplianceOfficer ;
+    rdfs:range xsd:string .
+
+:caseloadCount a owl:DatatypeProperty ;
+    rdfs:domain :ComplianceOfficer ;
+    rdfs:range xsd:integer .
+
+:lastTrainingDate a owl:DatatypeProperty ;
+    rdfs:domain :ComplianceOfficer ;
+    rdfs:range xsd:date .
+
+:authorityLevel a owl:DatatypeProperty ;
+    rdfs:domain :ComplianceOfficer ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "analyst" "senior_analyst" "manager" "senior_manager" "director" "chief_compliance_officer" )
+    ] .

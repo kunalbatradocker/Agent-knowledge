@@ -1,0 +1,398 @@
+/* Ontology Generator Modal */
+
+.ontology-generator-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.ontology-generator-modal {
+  background: #fff;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 700px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.og-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #eee;
+}
+
+.og-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #000;
+}
+
+.og-close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #666;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+}
+
+.og-close-btn:hover {
+  color: #000;
+}
+
+/* Mode Tabs */
+.og-mode-tabs {
+  display: flex;
+  border-bottom: 1px solid #eee;
+}
+
+.og-mode-tab {
+  flex: 1;
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  font-size: 14px;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-bottom: 2px solid transparent;
+}
+
+.og-mode-tab:hover {
+  background: #fafafa;
+}
+
+.og-mode-tab.active {
+  color: #000;
+  border-bottom-color: #000;
+  font-weight: 500;
+}
+
+/* Content */
+.og-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.og-field {
+  margin-bottom: 16px;
+}
+
+.og-field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 6px;
+}
+
+.og-field input[type="text"] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #000;
+  box-sizing: border-box;
+}
+
+.og-field input[type="text"]:focus {
+  outline: none;
+  border-color: #000;
+}
+
+.og-field textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #000;
+  resize: vertical;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.og-field textarea:focus {
+  outline: none;
+  border-color: #000;
+}
+
+.og-hint {
+  font-size: 12px;
+  color: #666;
+  margin-top: 6px;
+}
+
+/* File Upload */
+.og-file-upload {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.og-file-upload input[type="file"] {
+  display: none;
+}
+
+.og-file-label {
+  display: inline-block;
+  padding: 8px 16px;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.og-file-label:hover {
+  background: #eee;
+  border-color: #000;
+}
+
+.og-file-hint {
+  font-size: 13px;
+  color: #666;
+}
+
+/* Error */
+.og-error {
+  background: #fff5f5;
+  border: 1px solid #ffcccc;
+  color: #cc0000;
+  padding: 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  margin-top: 12px;
+}
+
+/* Footer */
+.og-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 1px solid #eee;
+}
+
+.og-cancel-btn,
+.og-back-btn {
+  padding: 10px 20px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.og-cancel-btn:hover,
+.og-back-btn:hover {
+  background: #f5f5f5;
+  border-color: #000;
+  color: #000;
+}
+
+.og-generate-btn,
+.og-use-btn {
+  padding: 10px 24px;
+  background: #000;
+  border: 1px solid #000;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.og-generate-btn:hover:not(:disabled),
+.og-use-btn:hover {
+  background: #333;
+}
+
+.og-generate-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Preview */
+.og-preview {
+  background: #fafafa;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.og-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.og-preview-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #000;
+}
+
+.og-preview-badge {
+  background: #e8f5e9;
+  color: #2e7d32;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.og-preview-desc {
+  color: #666;
+  font-size: 14px;
+  margin: 0 0 16px 0;
+  line-height: 1.5;
+}
+
+.og-preview-stats {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #eee;
+}
+
+.og-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.og-stat-value {
+  font-size: 24px;
+  font-weight: 600;
+  color: #000;
+}
+
+.og-stat-label {
+  font-size: 12px;
+  color: #666;
+}
+
+.og-preview-section {
+  margin-bottom: 16px;
+}
+
+.og-preview-section:last-child {
+  margin-bottom: 0;
+}
+
+.og-preview-section h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 10px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.og-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.og-preview-item {
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.og-preview-item-name {
+  font-weight: 500;
+  color: #000;
+}
+
+.og-preview-item-desc {
+  font-size: 12px;
+  color: #666;
+  flex: 1;
+}
+
+.og-preview-item-props {
+  font-size: 11px;
+  color: #999;
+  background: #f5f5f5;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.og-preview-rel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.og-preview-rel-from,
+.og-preview-rel-to {
+  font-size: 13px;
+  color: #333;
+}
+
+.og-preview-rel-type {
+  background: #f5f5f5;
+  color: #000;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: monospace;
+}
+
+.og-preview-more {
+  font-size: 12px;
+  color: #666;
+  font-style: italic;
+  padding: 8px 12px;
+}
+
+/* Edit button in generator */
+.og-edit-btn {
+  padding: 10px 20px;
+  background: #f8f9fa;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.og-edit-btn:hover {
+  background: #e9ecef;
+  border-color: #999;
+}
+
+.og-edit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

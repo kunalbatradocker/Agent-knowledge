@@ -1,0 +1,17 @@
+{
+  "contextRules": {
+    "autoInclude": [
+      "DEVELOPMENT_RULES.md"
+    ],
+    "contextEntries": {
+      "developmentRules": {
+        "file": "DEVELOPMENT_RULES.md",
+        "enabled": true,
+        "priority": "high"
+      }
+    }
+  },
+  "systemPrompts": {
+    "beforeExecution": "Read and follow the rules in DEVELOPMENT_RULES.md before implementing any solution."
+  }
+}

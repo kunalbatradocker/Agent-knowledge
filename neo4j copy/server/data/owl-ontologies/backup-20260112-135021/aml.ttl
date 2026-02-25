@@ -1,0 +1,566 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix : <http://example.org/aml#> .
+
+# Ontology Declaration
+:AMLOntology a owl:Ontology ;
+    rdfs:label "Anti-Money Laundering Ontology" ;
+    rdfs:comment "Comprehensive ontology for AML compliance, suspicious activity detection, and regulatory reporting with validation constraints" ;
+    owl:versionInfo "1.0" .
+
+# ============================================================================
+# CLASSES
+# ============================================================================
+
+:SuspiciousActivity a owl:Class ;
+    rdfs:label "Suspicious Activity" ;
+    rdfs:comment "A suspicious activity or transaction pattern" .
+
+:RiskIndicator a owl:Class ;
+    rdfs:label "Risk Indicator" ;
+    rdfs:comment "A risk indicator or red flag" .
+
+:Investigation a owl:Class ;
+    rdfs:label "Investigation" ;
+    rdfs:comment "An AML investigation case" .
+
+:SanctionedEntity a owl:Class ;
+    rdfs:label "Sanctioned Entity" ;
+    rdfs:comment "An entity on a sanctions list" .
+
+:PEP a owl:Class ;
+    rdfs:label "PEP" ;
+    rdfs:comment "Politically Exposed Person" .
+
+:Jurisdiction a owl:Class ;
+    rdfs:label "Jurisdiction" ;
+    rdfs:comment "A geographic jurisdiction with AML relevance" .
+
+:ComplianceRule a owl:Class ;
+    rdfs:label "Compliance Rule" ;
+    rdfs:comment "A compliance rule or regulation" .
+
+:Alert a owl:Class ;
+    rdfs:label "Alert" ;
+    rdfs:comment "An automated AML alert or notification" .
+
+:Report a owl:Class ;
+    rdfs:label "Report" ;
+    rdfs:comment "A regulatory report (SAR, CTR, etc.)" .
+
+# ============================================================================
+# OBJECT PROPERTIES (Relationships)
+# ============================================================================
+
+:triggeredActivity a owl:ObjectProperty ;
+    rdfs:label "Triggered Activity" ;
+    rdfs:comment "Risk indicator triggered suspicious activity detection" ;
+    rdfs:domain :RiskIndicator ;
+    rdfs:range :SuspiciousActivity .
+
+:involvesEntity a owl:ObjectProperty ;
+    rdfs:label "Involves Entity" ;
+    rdfs:comment "Activity or investigation involves a customer, account, or transaction" ;
+    rdfs:domain [ owl:unionOf ( :SuspiciousActivity :Investigation ) ] ;
+    rdfs:range [ owl:unionOf ( :Customer :Account :Transaction ) ] .
+
+:investigatedBy a owl:ObjectProperty ;
+    rdfs:label "Investigated By" ;
+    rdfs:comment "Suspicious activity is investigated by a case" ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range :Investigation .
+
+:matchesEntity a owl:ObjectProperty ;
+    rdfs:label "Matches Entity" ;
+    rdfs:comment "Customer matches a sanctioned entity or PEP" ;
+    rdfs:domain :Customer ;
+    rdfs:range [ owl:unionOf ( :SanctionedEntity :PEP ) ] .
+
+:locatedInJurisdiction a owl:ObjectProperty ;
+    rdfs:label "Located In Jurisdiction" ;
+    rdfs:comment "Entity is located in or associated with a jurisdiction" ;
+    rdfs:domain [ owl:unionOf ( :Customer :Transaction :Account ) ] ;
+    rdfs:range :Jurisdiction .
+
+:violatesRule a owl:ObjectProperty ;
+    rdfs:label "Violates Rule" ;
+    rdfs:comment "Activity potentially violates a compliance rule" ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range :ComplianceRule .
+
+:associatedWithCustomer a owl:ObjectProperty ;
+    rdfs:label "Associated With Customer" ;
+    rdfs:comment "High-risk entity is associated with a customer" ;
+    rdfs:domain [ owl:unionOf ( :PEP :SanctionedEntity ) ] ;
+    rdfs:range :Customer .
+
+:generatedAlert a owl:ObjectProperty ;
+    rdfs:label "Generated Alert" ;
+    rdfs:comment "Activity generated an automated alert" ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range :Alert .
+
+:resultsInReport a owl:ObjectProperty ;
+    rdfs:label "Results In Report" ;
+    rdfs:comment "Investigation results in a regulatory report" ;
+    rdfs:domain :Investigation ;
+    rdfs:range :Report .
+
+# ============================================================================
+# DATA PROPERTIES - SuspiciousActivity
+# ============================================================================
+
+:activityId a owl:DatatypeProperty ;
+    rdfs:label "Activity ID" ;
+    rdfs:comment "Unique identifier for the suspicious activity" ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range xsd:string .
+
+:activityType a owl:DatatypeProperty ;
+    rdfs:label "Activity Type" ;
+    rdfs:comment "Type of suspicious activity: structuring, unusual_pattern, high_risk_jurisdiction, rapid_movement, or smurfing" ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "structuring" "unusual_pattern" "high_risk_jurisdiction" "rapid_movement" "smurfing" "layering" "integration" )
+    ] .
+
+:activityDescription a owl:DatatypeProperty ;
+    rdfs:label "Activity Description" ;
+    rdfs:comment "Detailed description of the suspicious activity" ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range xsd:string .
+
+:detectionDate a owl:DatatypeProperty ;
+    rdfs:label "Detection Date" ;
+    rdfs:comment "Date when the suspicious activity was detected" ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range xsd:date .
+
+:riskScore a owl:DatatypeProperty ;
+    rdfs:label "Risk Score" ;
+    rdfs:comment "Risk score of the activity (0-100)" ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range xsd:integer .
+
+:activityStatus a owl:DatatypeProperty ;
+    rdfs:label "Activity Status" ;
+    rdfs:comment "Status of the activity: open, under_review, escalated, closed, or false_positive" ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "open" "under_review" "escalated" "closed" "false_positive" )
+    ] .
+
+:totalAmount a owl:DatatypeProperty ;
+    rdfs:label "Total Amount" ;
+    rdfs:comment "Total monetary amount involved in the suspicious activity" ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range xsd:decimal .
+
+:transactionCount a owl:DatatypeProperty ;
+    rdfs:label "Transaction Count" ;
+    rdfs:comment "Number of transactions involved in the activity" ;
+    rdfs:domain :SuspiciousActivity ;
+    rdfs:range xsd:integer .
+
+# ============================================================================
+# DATA PROPERTIES - RiskIndicator
+# ============================================================================
+
+:indicatorName a owl:DatatypeProperty ;
+    rdfs:label "Indicator Name" ;
+    rdfs:comment "Name of the risk indicator" ;
+    rdfs:domain :RiskIndicator ;
+    rdfs:range xsd:string .
+
+:indicatorCategory a owl:DatatypeProperty ;
+    rdfs:label "Indicator Category" ;
+    rdfs:comment "Category of risk indicator: transaction, customer, geographic, or behavioral" ;
+    rdfs:domain :RiskIndicator ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "transaction" "customer" "geographic" "behavioral" )
+    ] .
+
+:severity a owl:DatatypeProperty ;
+    rdfs:label "Severity" ;
+    rdfs:comment "Severity level: low, medium, high, or critical" ;
+    rdfs:domain :RiskIndicator ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "low" "medium" "high" "critical" )
+    ] .
+
+:indicatorDescription a owl:DatatypeProperty ;
+    rdfs:label "Indicator Description" ;
+    rdfs:comment "Description of the risk indicator" ;
+    rdfs:domain :RiskIndicator ;
+    rdfs:range xsd:string .
+
+:threshold a owl:DatatypeProperty ;
+    rdfs:label "Threshold" ;
+    rdfs:comment "Threshold value that triggers the indicator" ;
+    rdfs:domain :RiskIndicator ;
+    rdfs:range xsd:decimal .
+
+# ============================================================================
+# DATA PROPERTIES - Investigation
+# ============================================================================
+
+:caseId a owl:DatatypeProperty ;
+    rdfs:label "Case ID" ;
+    rdfs:comment "Unique case identifier" ;
+    rdfs:domain :Investigation ;
+    rdfs:range xsd:string .
+
+:caseType a owl:DatatypeProperty ;
+    rdfs:label "Case Type" ;
+    rdfs:comment "Type of investigation: aml, fraud, sanctions, or kyc" ;
+    rdfs:domain :Investigation ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "aml" "fraud" "sanctions" "kyc" "terrorist_financing" )
+    ] .
+
+:investigationStatus a owl:DatatypeProperty ;
+    rdfs:label "Investigation Status" ;
+    rdfs:comment "Status of the investigation: open, in_progress, pending_review, closed, or escalated" ;
+    rdfs:domain :Investigation ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "open" "in_progress" "pending_review" "closed" "escalated" )
+    ] .
+
+:priority a owl:DatatypeProperty ;
+    rdfs:label "Priority" ;
+    rdfs:comment "Priority level: low, medium, high, or urgent" ;
+    rdfs:domain :Investigation ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "low" "medium" "high" "urgent" )
+    ] .
+
+:openedDate a owl:DatatypeProperty ;
+    rdfs:label "Opened Date" ;
+    rdfs:comment "Date when the investigation was opened" ;
+    rdfs:domain :Investigation ;
+    rdfs:range xsd:date .
+
+:closedDate a owl:DatatypeProperty ;
+    rdfs:label "Closed Date" ;
+    rdfs:comment "Date when the investigation was closed" ;
+    rdfs:domain :Investigation ;
+    rdfs:range xsd:date .
+
+:outcome a owl:DatatypeProperty ;
+    rdfs:label "Outcome" ;
+    rdfs:comment "Outcome of the investigation: substantiated, unsubstantiated, or inconclusive" ;
+    rdfs:domain :Investigation ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "substantiated" "unsubstantiated" "inconclusive" )
+    ] .
+
+:assignedTo a owl:DatatypeProperty ;
+    rdfs:label "Assigned To" ;
+    rdfs:comment "Name of the investigator or team assigned to the case" ;
+    rdfs:domain :Investigation ;
+    rdfs:range xsd:string .
+
+:investigationNotes a owl:DatatypeProperty ;
+    rdfs:label "Investigation Notes" ;
+    rdfs:comment "Notes and findings from the investigation" ;
+    rdfs:domain :Investigation ;
+    rdfs:range xsd:string .
+
+# ============================================================================
+# DATA PROPERTIES - SanctionedEntity
+# ============================================================================
+
+:entityName a owl:DatatypeProperty ;
+    rdfs:label "Entity Name" ;
+    rdfs:comment "Name of the sanctioned entity" ;
+    rdfs:domain :SanctionedEntity ;
+    rdfs:range xsd:string .
+
+:entityType a owl:DatatypeProperty ;
+    rdfs:label "Entity Type" ;
+    rdfs:comment "Type of entity: individual, organization, vessel, or aircraft" ;
+    rdfs:domain :SanctionedEntity ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "individual" "organization" "vessel" "aircraft" )
+    ] .
+
+:sanctionsList a owl:DatatypeProperty ;
+    rdfs:label "Sanctions List" ;
+    rdfs:comment "Sanctions list: OFAC, EU, UN, FATF, or HMT" ;
+    rdfs:domain :SanctionedEntity ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "OFAC" "EU" "UN" "FATF" "HMT" )
+    ] .
+
+:listingDate a owl:DatatypeProperty ;
+    rdfs:label "Listing Date" ;
+    rdfs:comment "Date when the entity was added to the sanctions list" ;
+    rdfs:domain :SanctionedEntity ;
+    rdfs:range xsd:date .
+
+:sanctionsCountry a owl:DatatypeProperty ;
+    rdfs:label "Sanctions Country" ;
+    rdfs:comment "Country associated with the sanctioned entity" ;
+    rdfs:domain :SanctionedEntity ;
+    rdfs:range xsd:string .
+
+:sanctionsReason a owl:DatatypeProperty ;
+    rdfs:label "Sanctions Reason" ;
+    rdfs:comment "Reason for sanctions (e.g., terrorism, drug trafficking)" ;
+    rdfs:domain :SanctionedEntity ;
+    rdfs:range xsd:string .
+
+:aliases a owl:DatatypeProperty ;
+    rdfs:label "Aliases" ;
+    rdfs:comment "Known aliases or alternate names" ;
+    rdfs:domain :SanctionedEntity ;
+    rdfs:range xsd:string .
+
+# ============================================================================
+# DATA PROPERTIES - PEP
+# ============================================================================
+
+:pepName a owl:DatatypeProperty ;
+    rdfs:label "PEP Name" ;
+    rdfs:comment "Name of the politically exposed person" ;
+    rdfs:domain :PEP ;
+    rdfs:range xsd:string .
+
+:position a owl:DatatypeProperty ;
+    rdfs:label "Position" ;
+    rdfs:comment "Political position or role held by the PEP" ;
+    rdfs:domain :PEP ;
+    rdfs:range xsd:string .
+
+:pepCountry a owl:DatatypeProperty ;
+    rdfs:label "PEP Country" ;
+    rdfs:comment "Country where the PEP holds or held political office" ;
+    rdfs:domain :PEP ;
+    rdfs:range xsd:string .
+
+:pepCategory a owl:DatatypeProperty ;
+    rdfs:label "PEP Category" ;
+    rdfs:comment "Category of PEP: domestic, foreign, or international_organization" ;
+    rdfs:domain :PEP ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "domestic" "foreign" "international_organization" )
+    ] .
+
+:pepRiskLevel a owl:DatatypeProperty ;
+    rdfs:label "PEP Risk Level" ;
+    rdfs:comment "Risk level: low, medium, high, or critical" ;
+    rdfs:domain :PEP ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "low" "medium" "high" "critical" )
+    ] .
+
+:positionStartDate a owl:DatatypeProperty ;
+    rdfs:label "Position Start Date" ;
+    rdfs:comment "Date when the PEP assumed the position" ;
+    rdfs:domain :PEP ;
+    rdfs:range xsd:date .
+
+:positionEndDate a owl:DatatypeProperty ;
+    rdfs:label "Position End Date" ;
+    rdfs:comment "Date when the PEP left the position" ;
+    rdfs:domain :PEP ;
+    rdfs:range xsd:date .
+
+:isActive a owl:DatatypeProperty ;
+    rdfs:label "Is Active" ;
+    rdfs:comment "Boolean flag indicating if the PEP is currently in office" ;
+    rdfs:domain :PEP ;
+    rdfs:range xsd:boolean .
+
+# ============================================================================
+# DATA PROPERTIES - Jurisdiction
+# ============================================================================
+
+:jurisdictionName a owl:DatatypeProperty ;
+    rdfs:label "Jurisdiction Name" ;
+    rdfs:comment "Name of the jurisdiction or country" ;
+    rdfs:domain :Jurisdiction ;
+    rdfs:range xsd:string .
+
+:isoCode a owl:DatatypeProperty ;
+    rdfs:label "ISO Code" ;
+    rdfs:comment "ISO country code (e.g., US, GB, CN)" ;
+    rdfs:domain :Jurisdiction ;
+    rdfs:range xsd:string .
+
+:jurisdictionRiskRating a owl:DatatypeProperty ;
+    rdfs:label "Jurisdiction Risk Rating" ;
+    rdfs:comment "Risk rating: low, medium, high, or prohibited" ;
+    rdfs:domain :Jurisdiction ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "low" "medium" "high" "prohibited" )
+    ] .
+
+:fatfStatus a owl:DatatypeProperty ;
+    rdfs:label "FATF Status" ;
+    rdfs:comment "FATF status: compliant, monitored, blacklisted, or greylisted" ;
+    rdfs:domain :Jurisdiction ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "compliant" "monitored" "blacklisted" "greylisted" )
+    ] .
+
+:corruptionIndex a owl:DatatypeProperty ;
+    rdfs:label "Corruption Index" ;
+    rdfs:comment "Transparency International Corruption Perceptions Index score (0-100)" ;
+    rdfs:domain :Jurisdiction ;
+    rdfs:range xsd:integer .
+
+# ============================================================================
+# DATA PROPERTIES - ComplianceRule
+# ============================================================================
+
+:ruleId a owl:DatatypeProperty ;
+    rdfs:label "Rule ID" ;
+    rdfs:comment "Unique identifier for the compliance rule" ;
+    rdfs:domain :ComplianceRule ;
+    rdfs:range xsd:string .
+
+:ruleName a owl:DatatypeProperty ;
+    rdfs:label "Rule Name" ;
+    rdfs:comment "Name of the compliance rule" ;
+    rdfs:domain :ComplianceRule ;
+    rdfs:range xsd:string .
+
+:regulation a owl:DatatypeProperty ;
+    rdfs:label "Regulation" ;
+    rdfs:comment "Regulation source: BSA, AML_Act, FATF_Recommendation, or Patriot_Act" ;
+    rdfs:domain :ComplianceRule ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "BSA" "AML_Act" "FATF_Recommendation" "Patriot_Act" "EU_AMLD" )
+    ] .
+
+:ruleDescription a owl:DatatypeProperty ;
+    rdfs:label "Rule Description" ;
+    rdfs:comment "Description of the compliance rule" ;
+    rdfs:domain :ComplianceRule ;
+    rdfs:range xsd:string .
+
+:effectiveDate a owl:DatatypeProperty ;
+    rdfs:label "Effective Date" ;
+    rdfs:comment "Date when the rule became effective" ;
+    rdfs:domain :ComplianceRule ;
+    rdfs:range xsd:date .
+
+:ruleThreshold a owl:DatatypeProperty ;
+    rdfs:label "Rule Threshold" ;
+    rdfs:comment "Threshold value for rule triggering" ;
+    rdfs:domain :ComplianceRule ;
+    rdfs:range xsd:decimal .
+
+# ============================================================================
+# DATA PROPERTIES - Alert
+# ============================================================================
+
+:alertId a owl:DatatypeProperty ;
+    rdfs:label "Alert ID" ;
+    rdfs:comment "Unique identifier for the alert" ;
+    rdfs:domain :Alert ;
+    rdfs:range xsd:string .
+
+:alertType a owl:DatatypeProperty ;
+    rdfs:label "Alert Type" ;
+    rdfs:comment "Type of alert: transaction, customer, sanctions, or pep" ;
+    rdfs:domain :Alert ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "transaction" "customer" "sanctions" "pep" )
+    ] .
+
+:alertTimestamp a owl:DatatypeProperty ;
+    rdfs:label "Alert Timestamp" ;
+    rdfs:comment "Date and time when the alert was generated" ;
+    rdfs:domain :Alert ;
+    rdfs:range xsd:dateTime .
+
+:alertSeverity a owl:DatatypeProperty ;
+    rdfs:label "Alert Severity" ;
+    rdfs:comment "Severity of the alert: low, medium, high, or critical" ;
+    rdfs:domain :Alert ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "low" "medium" "high" "critical" )
+    ] .
+
+:alertStatus a owl:DatatypeProperty ;
+    rdfs:label "Alert Status" ;
+    rdfs:comment "Status of the alert: new, reviewed, escalated, or dismissed" ;
+    rdfs:domain :Alert ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "new" "reviewed" "escalated" "dismissed" )
+    ] .
+
+:alertMessage a owl:DatatypeProperty ;
+    rdfs:label "Alert Message" ;
+    rdfs:comment "Message or description of the alert" ;
+    rdfs:domain :Alert ;
+    rdfs:range xsd:string .
+
+# ============================================================================
+# DATA PROPERTIES - Report
+# ============================================================================
+
+:reportId a owl:DatatypeProperty ;
+    rdfs:label "Report ID" ;
+    rdfs:comment "Unique identifier for the regulatory report" ;
+    rdfs:domain :Report ;
+    rdfs:range xsd:string .
+
+:reportType a owl:DatatypeProperty ;
+    rdfs:label "Report Type" ;
+    rdfs:comment "Type of report: SAR, CTR, FBAR, or STR" ;
+    rdfs:domain :Report ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "SAR" "CTR" "FBAR" "STR" )
+    ] .
+
+:filingDate a owl:DatatypeProperty ;
+    rdfs:label "Filing Date" ;
+    rdfs:comment "Date when the report was filed with authorities" ;
+    rdfs:domain :Report ;
+    rdfs:range xsd:date .
+
+:reportStatus a owl:DatatypeProperty ;
+    rdfs:label "Report Status" ;
+    rdfs:comment "Status of the report: draft, submitted, accepted, or rejected" ;
+    rdfs:domain :Report ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "draft" "submitted" "accepted" "rejected" )
+    ] .
+
+:reportNarrative a owl:DatatypeProperty ;
+    rdfs:label "Report Narrative" ;
+    rdfs:comment "Narrative description of the suspicious activity" ;
+    rdfs:domain :Report ;
+    rdfs:range xsd:string .
+
+:regulatoryAuthority a owl:DatatypeProperty ;
+    rdfs:label "Regulatory Authority" ;
+    rdfs:comment "Authority to which the report was filed (e.g., FinCEN, FCA)" ;
+    rdfs:domain :Report ;
+    rdfs:range xsd:string .
+

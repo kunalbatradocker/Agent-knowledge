@@ -1,0 +1,249 @@
+# Legal Contract Ontology
+# For extracting knowledge from contracts and legal documents
+
+metadata:
+  name: "Legal Contract Ontology"
+  version: "1.0.0"
+  domain: "legal"
+  description: "Ontology for extracting structured knowledge from contracts and legal documents"
+
+entity_types:
+  - name: "Party"
+    description: "A person or organization that is a party to the contract"
+    extraction_strategy: "llm"
+    aliases: ["Contracting Party", "Signatory", "Principal"]
+    properties:
+      - name: "name"
+        data_type: "string"
+        required: true
+        is_identity: true
+        description: "Legal name of the party"
+      - name: "party_type"
+        data_type: "string"
+        required: false
+        validation_rules:
+          allowed_values: ["individual", "corporation", "llc", "partnership", "government", "nonprofit"]
+      - name: "role"
+        data_type: "string"
+        description: "Role in the contract (e.g., Buyer, Seller, Licensor)"
+      - name: "address"
+        data_type: "string"
+      - name: "jurisdiction"
+        data_type: "string"
+        description: "Legal jurisdiction of the party"
+      - name: "registration_number"
+        data_type: "string"
+        description: "Company registration or tax ID"
+
+  - name: "Contract"
+    description: "The legal agreement document"
+    extraction_strategy: "llm"
+    aliases: ["Agreement", "Legal Document"]
+    properties:
+      - name: "title"
+        data_type: "string"
+        required: true
+        description: "Title or name of the contract"
+      - name: "contract_type"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["service", "employment", "nda", "license", "sale", "lease", "partnership", "loan"]
+      - name: "effective_date"
+        data_type: "date"
+        required: false
+      - name: "expiration_date"
+        data_type: "date"
+      - name: "execution_date"
+        data_type: "date"
+        description: "Date the contract was signed"
+      - name: "governing_law"
+        data_type: "string"
+        description: "Jurisdiction whose laws govern the contract"
+      - name: "contract_value"
+        data_type: "string"
+        description: "Total value or consideration"
+
+  - name: "Obligation"
+    description: "A duty or requirement imposed by the contract"
+    extraction_strategy: "llm"
+    aliases: ["Duty", "Requirement", "Commitment"]
+    properties:
+      - name: "description"
+        data_type: "string"
+        required: true
+        description: "Description of the obligation"
+      - name: "obligation_type"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["payment", "delivery", "performance", "confidentiality", "non-compete", "reporting", "compliance"]
+      - name: "due_date"
+        data_type: "date"
+      - name: "frequency"
+        data_type: "string"
+        description: "How often the obligation must be fulfilled"
+        validation_rules:
+          allowed_values: ["one-time", "daily", "weekly", "monthly", "quarterly", "annually", "ongoing"]
+      - name: "penalty"
+        data_type: "string"
+        description: "Penalty for non-compliance"
+
+  - name: "Term"
+    description: "A defined term or definition in the contract"
+    extraction_strategy: "llm"
+    aliases: ["Definition", "Defined Term"]
+    properties:
+      - name: "term"
+        data_type: "string"
+        required: true
+        is_identity: true
+        description: "The defined term"
+      - name: "definition"
+        data_type: "string"
+        required: true
+        description: "The definition of the term"
+      - name: "section_reference"
+        data_type: "string"
+        description: "Section where the term is defined"
+
+  - name: "Clause"
+    description: "A specific section or provision of the contract"
+    extraction_strategy: "llm"
+    aliases: ["Section", "Provision", "Article"]
+    properties:
+      - name: "title"
+        data_type: "string"
+        required: true
+        description: "Title or heading of the clause"
+      - name: "section_number"
+        data_type: "string"
+        description: "Section or article number"
+      - name: "clause_type"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["standard", "termination", "indemnification", "limitation_of_liability", "confidentiality", "ip_rights", "dispute_resolution", "force_majeure", "amendment", "assignment"]
+      - name: "summary"
+        data_type: "string"
+        description: "Brief summary of the clause"
+
+  - name: "Payment"
+    description: "A payment term or schedule"
+    extraction_strategy: "llm"
+    aliases: ["Payment Term", "Fee", "Compensation"]
+    properties:
+      - name: "amount"
+        data_type: "float"
+        required: false
+        description: "Payment amount"
+      - name: "currency"
+        data_type: "string"
+      - name: "due_date"
+        data_type: "date"
+      - name: "payment_type"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["one-time", "recurring", "milestone", "royalty", "commission"]
+      - name: "payment_method"
+        data_type: "string"
+      - name: "description"
+        data_type: "string"
+
+  - name: "Date"
+    description: "An important date mentioned in the contract"
+    extraction_strategy: "hybrid"
+    extraction_patterns:
+      - pattern: "\\b(January|February|March|April|May|June|July|August|September|October|November|December)\\s+\\d{1,2},?\\s+\\d{4}\\b"
+        description: "Full date format"
+      - pattern: "\\b\\d{1,2}/\\d{1,2}/\\d{2,4}\\b"
+        description: "Numeric date format"
+    properties:
+      - name: "date"
+        data_type: "date"
+        required: true
+      - name: "date_type"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["effective", "expiration", "execution", "deadline", "milestone", "renewal"]
+      - name: "description"
+        data_type: "string"
+
+  - name: "Amount"
+    description: "A monetary amount mentioned in the contract"
+    extraction_strategy: "hybrid"
+    extraction_patterns:
+      - pattern: "\\$[\\d,]+(?:\\.\\d{2})?"
+        description: "USD amount"
+      - pattern: "€[\\d,]+(?:\\.\\d{2})?"
+        description: "EUR amount"
+      - pattern: "£[\\d,]+(?:\\.\\d{2})?"
+        description: "GBP amount"
+    properties:
+      - name: "value"
+        data_type: "float"
+        required: true
+      - name: "currency"
+        data_type: "string"
+        required: true
+      - name: "amount_type"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["contract_value", "payment", "penalty", "cap", "minimum", "maximum", "deposit"]
+
+relationship_types:
+  - name: "PARTY_TO"
+    source_types: ["Party"]
+    target_types: ["Contract"]
+    description: "Party is a signatory to the contract"
+    properties:
+      - name: "role"
+        data_type: "string"
+        description: "Role of the party (e.g., Buyer, Seller)"
+
+  - name: "HAS_OBLIGATION"
+    source_types: ["Party"]
+    target_types: ["Obligation"]
+    description: "Party has this obligation under the contract"
+
+  - name: "CONTAINS_CLAUSE"
+    source_types: ["Contract"]
+    target_types: ["Clause"]
+    description: "Contract contains this clause"
+
+  - name: "DEFINES"
+    source_types: ["Contract", "Clause"]
+    target_types: ["Term"]
+    description: "Contract or clause defines this term"
+
+  - name: "REQUIRES_PAYMENT"
+    source_types: ["Contract", "Obligation"]
+    target_types: ["Payment"]
+    description: "Contract or obligation requires this payment"
+
+  - name: "DUE_BY"
+    source_types: ["Obligation", "Payment"]
+    target_types: ["Date"]
+    description: "Obligation or payment is due by this date"
+
+  - name: "EFFECTIVE_ON"
+    source_types: ["Contract"]
+    target_types: ["Date"]
+    description: "Contract becomes effective on this date"
+
+  - name: "EXPIRES_ON"
+    source_types: ["Contract"]
+    target_types: ["Date"]
+    description: "Contract expires on this date"
+
+  - name: "REFERENCES"
+    source_types: ["Clause"]
+    target_types: ["Clause", "Term"]
+    description: "Clause references another clause or term"
+
+  - name: "IMPOSES"
+    source_types: ["Clause"]
+    target_types: ["Obligation"]
+    description: "Clause imposes this obligation"
+
+  - name: "SPECIFIES_AMOUNT"
+    source_types: ["Contract", "Clause", "Payment"]
+    target_types: ["Amount"]
+    description: "Specifies this monetary amount"

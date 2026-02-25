@@ -1,0 +1,827 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix : <http://purplefabric.ai/banking#> .
+
+# Ontology Declaration
+:BankingOntology a owl:Ontology ;
+    rdfs:label "Enhanced Banking Ontology" ;
+    rdfs:comment "High-standard banking ontology with comprehensive relationships and regulatory compliance" ;
+    owl:versionInfo "2.0" .
+
+# ============================================================================
+# CLASSES
+# ============================================================================
+
+:Customer a owl:Class ;
+    rdfs:label "Customer" ;
+    rdfs:comment "Individual or corporate banking customer" .
+
+:Account a owl:Class ;
+    rdfs:label "Account" ;
+    rdfs:comment "Banking account with detailed attributes" .
+
+:Transaction a owl:Class ;
+    rdfs:label "Transaction" ;
+    rdfs:comment "Financial transaction with full audit trail" .
+
+:Branch a owl:Class ;
+    rdfs:label "Branch" ;
+    rdfs:comment "Physical bank branch with services" .
+
+:Product a owl:Class ;
+    rdfs:label "Product" ;
+    rdfs:comment "Banking product or service offering" .
+
+:Loan a owl:Class ;
+    rdfs:label "Loan" ;
+    rdfs:comment "Credit facility with terms and conditions" .
+
+:Card a owl:Class ;
+    rdfs:label "Card" ;
+    rdfs:comment "Payment card with usage tracking" .
+
+:Investment a owl:Class ;
+    rdfs:label "Investment" ;
+    rdfs:comment "Investment product or portfolio" .
+
+:Insurance a owl:Class ;
+    rdfs:label "Insurance" ;
+    rdfs:comment "Insurance policy or coverage" .
+
+:Merchant a owl:Class ;
+    rdfs:label "Merchant" ;
+    rdfs:comment "Business accepting payments" .
+
+:ATM a owl:Class ;
+    rdfs:label "ATM" ;
+    rdfs:comment "Automated Teller Machine" .
+
+:Employee a owl:Class ;
+    rdfs:label "Employee" ;
+    rdfs:comment "Bank employee or staff member" .
+
+:Collateral a owl:Class ;
+    rdfs:label "Collateral" ;
+    rdfs:comment "Asset securing a loan" .
+
+:CreditScore a owl:Class ;
+    rdfs:label "Credit Score" ;
+    rdfs:comment "Credit assessment and rating" .
+
+:RiskProfile a owl:Class ;
+    rdfs:label "Risk Profile" ;
+    rdfs:comment "Customer risk assessment" .
+
+# ============================================================================
+# ENHANCED OBJECT PROPERTIES
+# ============================================================================
+
+# Customer Relationships
+:ownsAccount a owl:ObjectProperty ;
+    rdfs:label "Owns Account" ;
+    rdfs:domain :Customer ;
+    rdfs:range :Account .
+
+:hasLoan a owl:ObjectProperty ;
+    rdfs:label "Has Loan" ;
+    rdfs:domain :Customer ;
+    rdfs:range :Loan .
+
+:hasCard a owl:ObjectProperty ;
+    rdfs:label "Has Card" ;
+    rdfs:domain :Customer ;
+    rdfs:range :Card .
+
+:hasInvestment a owl:ObjectProperty ;
+    rdfs:label "Has Investment" ;
+    rdfs:domain :Customer ;
+    rdfs:range :Investment .
+
+:hasInsurance a owl:ObjectProperty ;
+    rdfs:label "Has Insurance" ;
+    rdfs:domain :Customer ;
+    rdfs:range :Insurance .
+
+:subscribedToProduct a owl:ObjectProperty ;
+    rdfs:label "Subscribed To Product" ;
+    rdfs:domain :Customer ;
+    rdfs:range :Product .
+
+:hasCreditScore a owl:ObjectProperty ;
+    rdfs:label "Has Credit Score" ;
+    rdfs:domain :Customer ;
+    rdfs:range :CreditScore .
+
+:hasRiskProfile a owl:ObjectProperty ;
+    rdfs:label "Has Risk Profile" ;
+    rdfs:domain :Customer ;
+    rdfs:range :RiskProfile .
+
+:relatedToCustomer a owl:ObjectProperty ;
+    rdfs:label "Related To Customer" ;
+    rdfs:domain :Customer ;
+    rdfs:range :Customer .
+
+:authorizedUser a owl:ObjectProperty ;
+    rdfs:label "Authorized User" ;
+    rdfs:domain :Customer ;
+    rdfs:range :Account .
+
+:beneficiaryOf a owl:ObjectProperty ;
+    rdfs:label "Beneficiary Of" ;
+    rdfs:domain :Customer ;
+    rdfs:range [ owl:unionOf ( :Account :Investment :Insurance ) ] .
+
+:guarantorFor a owl:ObjectProperty ;
+    rdfs:label "Guarantor For" ;
+    rdfs:domain :Customer ;
+    rdfs:range :Loan .
+
+# Account Relationships
+:accountAtBranch a owl:ObjectProperty ;
+    rdfs:label "Account At Branch" ;
+    rdfs:domain :Account ;
+    rdfs:range :Branch .
+
+:linkedToCard a owl:ObjectProperty ;
+    rdfs:label "Linked To Card" ;
+    rdfs:domain :Account ;
+    rdfs:range :Card .
+
+:linkedToLoan a owl:ObjectProperty ;
+    rdfs:label "Linked To Loan" ;
+    rdfs:domain :Account ;
+    rdfs:range :Loan .
+
+:accountManagedBy a owl:ObjectProperty ;
+    rdfs:label "Account Managed By" ;
+    rdfs:domain :Account ;
+    rdfs:range :Employee .
+
+:jointAccountWith a owl:ObjectProperty ;
+    rdfs:label "Joint Account With" ;
+    rdfs:domain :Account ;
+    rdfs:range :Customer .
+
+:parentAccount a owl:ObjectProperty ;
+    rdfs:label "Parent Account" ;
+    rdfs:domain :Account ;
+    rdfs:range :Account .
+
+:childAccount a owl:ObjectProperty ;
+    rdfs:label "Child Account" ;
+    rdfs:domain :Account ;
+    rdfs:range :Account .
+
+# Transaction Relationships
+:transactionFromAccount a owl:ObjectProperty ;
+    rdfs:label "Transaction From Account" ;
+    rdfs:domain :Transaction ;
+    rdfs:range :Account .
+
+:transactionToAccount a owl:ObjectProperty ;
+    rdfs:label "Transaction To Account" ;
+    rdfs:domain :Transaction ;
+    rdfs:range :Account .
+
+:transactionAtBranch a owl:ObjectProperty ;
+    rdfs:label "Transaction At Branch" ;
+    rdfs:domain :Transaction ;
+    rdfs:range :Branch .
+
+:transactionAtATM a owl:ObjectProperty ;
+    rdfs:label "Transaction At ATM" ;
+    rdfs:domain :Transaction ;
+    rdfs:range :ATM .
+
+:transactionWithMerchant a owl:ObjectProperty ;
+    rdfs:label "Transaction With Merchant" ;
+    rdfs:domain :Transaction ;
+    rdfs:range :Merchant .
+
+:transactionUsingCard a owl:ObjectProperty ;
+    rdfs:label "Transaction Using Card" ;
+    rdfs:domain :Transaction ;
+    rdfs:range :Card .
+
+:transactionProcessedBy a owl:ObjectProperty ;
+    rdfs:label "Transaction Processed By" ;
+    rdfs:domain :Transaction ;
+    rdfs:range :Employee .
+
+:reversalOf a owl:ObjectProperty ;
+    rdfs:label "Reversal Of" ;
+    rdfs:domain :Transaction ;
+    rdfs:range :Transaction .
+
+:relatedTransaction a owl:ObjectProperty ;
+    rdfs:label "Related Transaction" ;
+    rdfs:domain :Transaction ;
+    rdfs:range :Transaction .
+
+# Loan Relationships
+:loanSecuredBy a owl:ObjectProperty ;
+    rdfs:label "Loan Secured By" ;
+    rdfs:domain :Loan ;
+    rdfs:range :Collateral .
+
+:loanApprovedBy a owl:ObjectProperty ;
+    rdfs:label "Loan Approved By" ;
+    rdfs:domain :Loan ;
+    rdfs:range :Employee .
+
+:loanOriginatedAt a owl:ObjectProperty ;
+    rdfs:label "Loan Originated At" ;
+    rdfs:domain :Loan ;
+    rdfs:range :Branch .
+
+:loanRefinancedFrom a owl:ObjectProperty ;
+    rdfs:label "Loan Refinanced From" ;
+    rdfs:domain :Loan ;
+    rdfs:range :Loan .
+
+:coSignedBy a owl:ObjectProperty ;
+    rdfs:label "Co-Signed By" ;
+    rdfs:domain :Loan ;
+    rdfs:range :Customer .
+
+# Investment Relationships
+:investmentManagedBy a owl:ObjectProperty ;
+    rdfs:label "Investment Managed By" ;
+    rdfs:domain :Investment ;
+    rdfs:range :Employee .
+
+:investmentLinkedToAccount a owl:ObjectProperty ;
+    rdfs:label "Investment Linked To Account" ;
+    rdfs:domain :Investment ;
+    rdfs:range :Account .
+
+:portfolioContains a owl:ObjectProperty ;
+    rdfs:label "Portfolio Contains" ;
+    rdfs:domain :Investment ;
+    rdfs:range :Investment .
+
+# Branch and ATM Relationships
+:branchServesCustomer a owl:ObjectProperty ;
+    rdfs:label "Branch Serves Customer" ;
+    rdfs:domain :Branch ;
+    rdfs:range :Customer .
+
+:atmAtBranch a owl:ObjectProperty ;
+    rdfs:label "ATM At Branch" ;
+    rdfs:domain :ATM ;
+    rdfs:range :Branch .
+
+:employeeWorksAt a owl:ObjectProperty ;
+    rdfs:label "Employee Works At" ;
+    rdfs:domain :Employee ;
+    rdfs:range :Branch .
+
+:employeeManages a owl:ObjectProperty ;
+    rdfs:label "Employee Manages" ;
+    rdfs:domain :Employee ;
+    rdfs:range [ owl:unionOf ( :Customer :Account :Loan :Investment ) ] .
+
+# Product Relationships
+:productOfferedAt a owl:ObjectProperty ;
+    rdfs:label "Product Offered At" ;
+    rdfs:domain :Product ;
+    rdfs:range :Branch .
+
+:productRequiresAccount a owl:ObjectProperty ;
+    rdfs:label "Product Requires Account" ;
+    rdfs:domain :Product ;
+    rdfs:range :Account .
+
+:productBundledWith a owl:ObjectProperty ;
+    rdfs:label "Product Bundled With" ;
+    rdfs:domain :Product ;
+    rdfs:range :Product .
+
+# ============================================================================
+# ENHANCED DATA PROPERTIES
+# ============================================================================
+
+# Customer Properties
+:customerId a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:string .
+
+:customerName a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:string .
+
+:customerType a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "individual" "corporate" "small_business" "non_profit" "government" )
+    ] .
+
+:dateOfBirth a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:date .
+
+:ssn a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:string .
+
+:taxId a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:string .
+
+:email a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:string .
+
+:phone a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:string .
+
+:address a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:string .
+
+:city a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:string .
+
+:state a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:string .
+
+:zipCode a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:string .
+
+:country a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:string .
+
+:occupation a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:string .
+
+:annualIncome a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:decimal .
+
+:employerName a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:string .
+
+:customerSince a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:date .
+
+:customerStatus a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "active" "inactive" "suspended" "closed" "prospect" )
+    ] .
+
+:kycStatus a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "pending" "verified" "rejected" "expired" )
+    ] .
+
+:riskRating a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "low" "medium" "high" "very_high" )
+    ] .
+
+:vipStatus a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:boolean .
+
+:preferredLanguage a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:string .
+
+:marketingOptIn a owl:DatatypeProperty ;
+    rdfs:domain :Customer ;
+    rdfs:range xsd:boolean .
+
+# Account Properties
+:accountNumber a owl:DatatypeProperty ;
+    rdfs:domain :Account ;
+    rdfs:range xsd:string .
+
+:accountType a owl:DatatypeProperty ;
+    rdfs:domain :Account ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "checking" "savings" "money_market" "cd" "ira" "business_checking" "business_savings" "trust" )
+    ] .
+
+:accountName a owl:DatatypeProperty ;
+    rdfs:domain :Account ;
+    rdfs:range xsd:string .
+
+:balance a owl:DatatypeProperty ;
+    rdfs:domain :Account ;
+    rdfs:range xsd:decimal .
+
+:availableBalance a owl:DatatypeProperty ;
+    rdfs:domain :Account ;
+    rdfs:range xsd:decimal .
+
+:currency a owl:DatatypeProperty ;
+    rdfs:domain :Account ;
+    rdfs:range xsd:string .
+
+:interestRate a owl:DatatypeProperty ;
+    rdfs:domain :Account ;
+    rdfs:range xsd:decimal .
+
+:openDate a owl:DatatypeProperty ;
+    rdfs:domain :Account ;
+    rdfs:range xsd:date .
+
+:closeDate a owl:DatatypeProperty ;
+    rdfs:domain :Account ;
+    rdfs:range xsd:date .
+
+:accountStatus a owl:DatatypeProperty ;
+    rdfs:domain :Account ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "active" "inactive" "frozen" "closed" "dormant" )
+    ] .
+
+:minimumBalance a owl:DatatypeProperty ;
+    rdfs:domain :Account ;
+    rdfs:range xsd:decimal .
+
+:overdraftLimit a owl:DatatypeProperty ;
+    rdfs:domain :Account ;
+    rdfs:range xsd:decimal .
+
+:monthlyFee a owl:DatatypeProperty ;
+    rdfs:domain :Account ;
+    rdfs:range xsd:decimal .
+
+:lastStatementDate a owl:DatatypeProperty ;
+    rdfs:domain :Account ;
+    rdfs:range xsd:date .
+
+:statementCycle a owl:DatatypeProperty ;
+    rdfs:domain :Account ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "monthly" "quarterly" "annually" )
+    ] .
+
+:onlineAccessEnabled a owl:DatatypeProperty ;
+    rdfs:domain :Account ;
+    rdfs:range xsd:boolean .
+
+:mobileAccessEnabled a owl:DatatypeProperty ;
+    rdfs:domain :Account ;
+    rdfs:range xsd:boolean .
+
+:alertsEnabled a owl:DatatypeProperty ;
+    rdfs:domain :Account ;
+    rdfs:range xsd:boolean .
+
+# Transaction Properties
+:transactionId a owl:DatatypeProperty ;
+    rdfs:domain :Transaction ;
+    rdfs:range xsd:string .
+
+:transactionType a owl:DatatypeProperty ;
+    rdfs:domain :Transaction ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "deposit" "withdrawal" "transfer" "payment" "fee" "interest" "dividend" "refund" "chargeback" )
+    ] .
+
+:amount a owl:DatatypeProperty ;
+    rdfs:domain :Transaction ;
+    rdfs:range xsd:decimal .
+
+:transactionDate a owl:DatatypeProperty ;
+    rdfs:domain :Transaction ;
+    rdfs:range xsd:dateTime .
+
+:postingDate a owl:DatatypeProperty ;
+    rdfs:domain :Transaction ;
+    rdfs:range xsd:dateTime .
+
+:description a owl:DatatypeProperty ;
+    rdfs:domain :Transaction ;
+    rdfs:range xsd:string .
+
+:referenceNumber a owl:DatatypeProperty ;
+    rdfs:domain :Transaction ;
+    rdfs:range xsd:string .
+
+:channel a owl:DatatypeProperty ;
+    rdfs:domain :Transaction ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "branch" "atm" "online" "mobile" "phone" "mail" "wire" "ach" )
+    ] .
+
+:transactionStatus a owl:DatatypeProperty ;
+    rdfs:domain :Transaction ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "pending" "posted" "failed" "cancelled" "reversed" )
+    ] .
+
+:merchantCategory a owl:DatatypeProperty ;
+    rdfs:domain :Transaction ;
+    rdfs:range xsd:string .
+
+:location a owl:DatatypeProperty ;
+    rdfs:domain :Transaction ;
+    rdfs:range xsd:string .
+
+:authorizationCode a owl:DatatypeProperty ;
+    rdfs:domain :Transaction ;
+    rdfs:range xsd:string .
+
+:exchangeRate a owl:DatatypeProperty ;
+    rdfs:domain :Transaction ;
+    rdfs:range xsd:decimal .
+
+:feeAmount a owl:DatatypeProperty ;
+    rdfs:domain :Transaction ;
+    rdfs:range xsd:decimal .
+
+:balanceAfter a owl:DatatypeProperty ;
+    rdfs:domain :Transaction ;
+    rdfs:range xsd:decimal .
+
+# Loan Properties
+:loanId a owl:DatatypeProperty ;
+    rdfs:domain :Loan ;
+    rdfs:range xsd:string .
+
+:loanType a owl:DatatypeProperty ;
+    rdfs:domain :Loan ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "mortgage" "auto" "personal" "business" "student" "home_equity" "credit_line" )
+    ] .
+
+:principalAmount a owl:DatatypeProperty ;
+    rdfs:domain :Loan ;
+    rdfs:range xsd:decimal .
+
+:currentBalance a owl:DatatypeProperty ;
+    rdfs:domain :Loan ;
+    rdfs:range xsd:decimal .
+
+:loanInterestRate a owl:DatatypeProperty ;
+    rdfs:domain :Loan ;
+    rdfs:range xsd:decimal .
+
+:termMonths a owl:DatatypeProperty ;
+    rdfs:domain :Loan ;
+    rdfs:range xsd:integer .
+
+:monthlyPayment a owl:DatatypeProperty ;
+    rdfs:domain :Loan ;
+    rdfs:range xsd:decimal .
+
+:originationDate a owl:DatatypeProperty ;
+    rdfs:domain :Loan ;
+    rdfs:range xsd:date .
+
+:maturityDate a owl:DatatypeProperty ;
+    rdfs:domain :Loan ;
+    rdfs:range xsd:date .
+
+:nextPaymentDate a owl:DatatypeProperty ;
+    rdfs:domain :Loan ;
+    rdfs:range xsd:date .
+
+:loanStatus a owl:DatatypeProperty ;
+    rdfs:domain :Loan ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "current" "past_due" "default" "charged_off" "paid_off" "refinanced" )
+    ] .
+
+:paymentsMade a owl:DatatypeProperty ;
+    rdfs:domain :Loan ;
+    rdfs:range xsd:integer .
+
+:paymentsRemaining a owl:DatatypeProperty ;
+    rdfs:domain :Loan ;
+    rdfs:range xsd:integer .
+
+:loanToValue a owl:DatatypeProperty ;
+    rdfs:domain :Loan ;
+    rdfs:range xsd:decimal .
+
+:debtToIncome a owl:DatatypeProperty ;
+    rdfs:domain :Loan ;
+    rdfs:range xsd:decimal .
+
+:creditScoreAtOrigination a owl:DatatypeProperty ;
+    rdfs:domain :Loan ;
+    rdfs:range xsd:integer .
+
+:loanPurpose a owl:DatatypeProperty ;
+    rdfs:domain :Loan ;
+    rdfs:range xsd:string .
+
+:escrowAccount a owl:DatatypeProperty ;
+    rdfs:domain :Loan ;
+    rdfs:range xsd:boolean .
+
+:prepaymentPenalty a owl:DatatypeProperty ;
+    rdfs:domain :Loan ;
+    rdfs:range xsd:boolean .
+
+# Card Properties
+:cardNumber a owl:DatatypeProperty ;
+    rdfs:domain :Card ;
+    rdfs:range xsd:string .
+
+:cardType a owl:DatatypeProperty ;
+    rdfs:domain :Card ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "debit" "credit" "prepaid" "business_debit" "business_credit" )
+    ] .
+
+:cardBrand a owl:DatatypeProperty ;
+    rdfs:domain :Card ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "visa" "mastercard" "american_express" "discover" )
+    ] .
+
+:expirationDate a owl:DatatypeProperty ;
+    rdfs:domain :Card ;
+    rdfs:range xsd:gYearMonth .
+
+:issueDate a owl:DatatypeProperty ;
+    rdfs:domain :Card ;
+    rdfs:range xsd:date .
+
+:cardStatus a owl:DatatypeProperty ;
+    rdfs:domain :Card ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "active" "inactive" "blocked" "expired" "lost" "stolen" )
+    ] .
+
+:creditLimit a owl:DatatypeProperty ;
+    rdfs:domain :Card ;
+    rdfs:range xsd:decimal .
+
+:availableCredit a owl:DatatypeProperty ;
+    rdfs:domain :Card ;
+    rdfs:range xsd:decimal .
+
+:dailyLimit a owl:DatatypeProperty ;
+    rdfs:domain :Card ;
+    rdfs:range xsd:decimal .
+
+:cashAdvanceLimit a owl:DatatypeProperty ;
+    rdfs:domain :Card ;
+    rdfs:range xsd:decimal .
+
+:rewardsProgram a owl:DatatypeProperty ;
+    rdfs:domain :Card ;
+    rdfs:range xsd:string .
+
+:rewardsBalance a owl:DatatypeProperty ;
+    rdfs:domain :Card ;
+    rdfs:range xsd:decimal .
+
+:annualFee a owl:DatatypeProperty ;
+    rdfs:domain :Card ;
+    rdfs:range xsd:decimal .
+
+:contactlessEnabled a owl:DatatypeProperty ;
+    rdfs:domain :Card ;
+    rdfs:range xsd:boolean .
+
+:internationalEnabled a owl:DatatypeProperty ;
+    rdfs:domain :Card ;
+    rdfs:range xsd:boolean .
+
+# Branch Properties
+:branchId a owl:DatatypeProperty ;
+    rdfs:domain :Branch ;
+    rdfs:range xsd:string .
+
+:branchName a owl:DatatypeProperty ;
+    rdfs:domain :Branch ;
+    rdfs:range xsd:string .
+
+:branchAddress a owl:DatatypeProperty ;
+    rdfs:domain :Branch ;
+    rdfs:range xsd:string .
+
+:branchCity a owl:DatatypeProperty ;
+    rdfs:domain :Branch ;
+    rdfs:range xsd:string .
+
+:branchState a owl:DatatypeProperty ;
+    rdfs:domain :Branch ;
+    rdfs:range xsd:string .
+
+:branchZipCode a owl:DatatypeProperty ;
+    rdfs:domain :Branch ;
+    rdfs:range xsd:string .
+
+:branchPhone a owl:DatatypeProperty ;
+    rdfs:domain :Branch ;
+    rdfs:range xsd:string .
+
+:branchManager a owl:DatatypeProperty ;
+    rdfs:domain :Branch ;
+    rdfs:range xsd:string .
+
+:openingHours a owl:DatatypeProperty ;
+    rdfs:domain :Branch ;
+    rdfs:range xsd:string .
+
+:driveThruAvailable a owl:DatatypeProperty ;
+    rdfs:domain :Branch ;
+    rdfs:range xsd:boolean .
+
+:atmCount a owl:DatatypeProperty ;
+    rdfs:domain :Branch ;
+    rdfs:range xsd:integer .
+
+:parkingAvailable a owl:DatatypeProperty ;
+    rdfs:domain :Branch ;
+    rdfs:range xsd:boolean .
+
+:wheelchairAccessible a owl:DatatypeProperty ;
+    rdfs:domain :Branch ;
+    rdfs:range xsd:boolean .
+
+:servicesOffered a owl:DatatypeProperty ;
+    rdfs:domain :Branch ;
+    rdfs:range xsd:string .
+
+# Investment Properties
+:investmentId a owl:DatatypeProperty ;
+    rdfs:domain :Investment ;
+    rdfs:range xsd:string .
+
+:investmentType a owl:DatatypeProperty ;
+    rdfs:domain :Investment ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "mutual_fund" "etf" "stock" "bond" "cd" "annuity" "ira" "401k" )
+    ] .
+
+:investmentValue a owl:DatatypeProperty ;
+    rdfs:domain :Investment ;
+    rdfs:range xsd:decimal .
+
+:purchaseDate a owl:DatatypeProperty ;
+    rdfs:domain :Investment ;
+    rdfs:range xsd:date .
+
+:purchasePrice a owl:DatatypeProperty ;
+    rdfs:domain :Investment ;
+    rdfs:range xsd:decimal .
+
+:currentPrice a owl:DatatypeProperty ;
+    rdfs:domain :Investment ;
+    rdfs:range xsd:decimal .
+
+:shares a owl:DatatypeProperty ;
+    rdfs:domain :Investment ;
+    rdfs:range xsd:decimal .
+
+:dividendYield a owl:DatatypeProperty ;
+    rdfs:domain :Investment ;
+    rdfs:range xsd:decimal .
+
+:expenseRatio a owl:DatatypeProperty ;
+    rdfs:domain :Investment ;
+    rdfs:range xsd:decimal .
+
+:riskLevel a owl:DatatypeProperty ;
+    rdfs:domain :Investment ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "conservative" "moderate" "aggressive" "speculative" )
+    ] .
+
+:maturityDate a owl:DatatypeProperty ;
+    rdfs:domain :Investment ;
+    rdfs:range xsd:date .
+
+:autoReinvest a owl:DatatypeProperty ;
+    rdfs:domain :Investment ;
+    rdfs:range xsd:boolean .

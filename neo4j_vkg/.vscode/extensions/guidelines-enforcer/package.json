@@ -1,0 +1,50 @@
+{
+  "name": "guidelines-enforcer",
+  "displayName": "Development Guidelines Enforcer",
+  "description": "Enforces project development guidelines in real-time",
+  "version": "1.0.0",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": ["Linters"],
+  "activationEvents": [
+    "onLanguage:javascript",
+    "onLanguage:typescript"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "guidelines.check",
+        "title": "Check Guidelines Compliance"
+      },
+      {
+        "command": "guidelines.update",
+        "title": "Update Guidelines"
+      }
+    ],
+    "configuration": {
+      "title": "Guidelines Enforcer",
+      "properties": {
+        "guidelines.autoCheck": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically check guidelines on file save"
+        },
+        "guidelines.showSuggestions": {
+          "type": "boolean", 
+          "default": true,
+          "description": "Show improvement suggestions"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.60.0",
+    "typescript": "^4.4.0"
+  }
+}

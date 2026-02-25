@@ -1,0 +1,67 @@
+.ltm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.ltm-panel {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  width: 480px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+.ltm-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.ltm-header h3 { margin: 0; font-size: 16px; }
+.ltm-close {
+  background: none; border: none; font-size: 18px; cursor: pointer; color: #888;
+  padding: 4px 8px; border-radius: 4px;
+}
+.ltm-close:hover { background: #f3f4f6; }
+.ltm-desc { font-size: 13px; color: #6b7280; margin: 0 0 16px; }
+.ltm-status-row {
+  display: flex; gap: 10px; margin-bottom: 12px;
+}
+.ltm-status-card {
+  flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid #e5e7eb;
+  display: flex; flex-direction: column; gap: 2px; position: relative;
+}
+.ltm-status-card.active { border-color: #86efac; background: #f0fdf4; }
+.ltm-status-card.expired { border-color: #fca5a5; background: #fef2f2; }
+.ltm-status-card.none { border-color: #e5e7eb; background: #f9fafb; }
+.ltm-status-label { font-size: 11px; color: #9ca3af; text-transform: uppercase; font-weight: 600; }
+.ltm-status-value { font-size: 13px; color: #1f2937; }
+.ltm-remove {
+  position: absolute; top: 6px; right: 6px; background: none; border: none;
+  font-size: 12px; cursor: pointer; color: #9ca3af; padding: 2px 4px; border-radius: 3px;
+}
+.ltm-remove:hover { background: #fee2e2; color: #ef4444; }
+.ltm-info-row {
+  display: flex; gap: 16px; font-size: 12px; color: #9ca3af; margin-bottom: 14px;
+}
+.ltm-input-section { display: flex; flex-direction: column; gap: 8px; }
+.ltm-input {
+  width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px;
+  font-size: 12px; font-family: monospace; resize: vertical; box-sizing: border-box;
+}
+.ltm-input:focus { outline: none; border-color: #8b5cf6; box-shadow: 0 0 0 2px rgba(139,92,246,0.15); }
+.ltm-save-btn {
+  align-self: flex-start; padding: 8px 20px; background: #7c3aed; color: #fff;
+  border: none; border-radius: 8px; font-size: 13px; cursor: pointer; font-weight: 500;
+}
+.ltm-save-btn:hover { background: #6d28d9; }
+.ltm-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ltm-message {
+  margin-top: 10px; padding: 8px 12px; border-radius: 6px; font-size: 13px;
+}
+.ltm-message.success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+.ltm-message.error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }

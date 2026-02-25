@@ -1,0 +1,830 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix : <http://purplefabric.ai/resume#> .
+
+# Ontology Declaration
+:ResumeOntology a owl:Ontology ;
+    rdfs:label "Enhanced Resume Ontology" ;
+    rdfs:comment "High-standard ontology for comprehensive resume analysis with rich relationships and validation" ;
+    owl:versionInfo "2.0" .
+
+# ============================================================================
+# CLASSES
+# ============================================================================
+
+:Candidate a owl:Class ;
+    rdfs:label "Candidate" ;
+    rdfs:comment "A person whose resume is being processed" .
+
+:Skill a owl:Class ;
+    rdfs:label "Skill" ;
+    rdfs:comment "A technical or soft skill with proficiency levels" .
+
+:Experience a owl:Class ;
+    rdfs:label "Experience" ;
+    rdfs:comment "Work experience with detailed context" .
+
+:Company a owl:Class ;
+    rdfs:label "Company" ;
+    rdfs:comment "An organization or employer with industry context" .
+
+:Education a owl:Class ;
+    rdfs:label "Education" ;
+    rdfs:comment "Educational qualification with academic details" .
+
+:Institution a owl:Class ;
+    rdfs:label "Institution" ;
+    rdfs:comment "Educational institution with ranking and reputation" .
+
+:Certification a owl:Class ;
+    rdfs:label "Certification" ;
+    rdfs:comment "Professional certification with validity tracking" .
+
+:Project a owl:Class ;
+    rdfs:label "Project" ;
+    rdfs:comment "Personal or professional project with impact metrics" .
+
+:Achievement a owl:Class ;
+    rdfs:label "Achievement" ;
+    rdfs:comment "Award or recognition with significance level" .
+
+:Language a owl:Class ;
+    rdfs:label "Language" ;
+    rdfs:comment "Language skill with standardized proficiency levels" .
+
+:Publication a owl:Class ;
+    rdfs:label "Publication" ;
+    rdfs:comment "Research publication with citation metrics" .
+
+:Reference a owl:Class ;
+    rdfs:label "Reference" ;
+    rdfs:comment "Professional reference or recommendation" .
+
+:Industry a owl:Class ;
+    rdfs:label "Industry" ;
+    rdfs:comment "Industry sector with specialization areas" .
+
+:Role a owl:Class ;
+    rdfs:label "Role" ;
+    rdfs:comment "Job role or position type with seniority level" .
+
+:Technology a owl:Class ;
+    rdfs:label "Technology" ;
+    rdfs:comment "Technology stack or tool category" .
+
+# ============================================================================
+# ENHANCED OBJECT PROPERTIES
+# ============================================================================
+
+# Skill Relationships
+:hasSkill a owl:ObjectProperty ;
+    rdfs:label "Has Skill" ;
+    rdfs:domain :Candidate ;
+    rdfs:range :Skill ;
+    owl:minCardinality 1 .
+
+:skillUsedIn a owl:ObjectProperty ;
+    rdfs:label "Skill Used In" ;
+    rdfs:domain :Skill ;
+    rdfs:range [ owl:unionOf ( :Experience :Project :Education ) ] .
+
+:skillRequiredFor a owl:ObjectProperty ;
+    rdfs:label "Skill Required For" ;
+    rdfs:domain :Skill ;
+    rdfs:range :Role .
+
+:skillComplementedBy a owl:ObjectProperty ;
+    rdfs:label "Skill Complemented By" ;
+    rdfs:domain :Skill ;
+    rdfs:range :Skill .
+
+:skillPartOfTechnology a owl:ObjectProperty ;
+    rdfs:label "Skill Part Of Technology" ;
+    rdfs:domain :Skill ;
+    rdfs:range :Technology .
+
+# Experience Relationships
+:hasExperience a owl:ObjectProperty ;
+    rdfs:label "Has Experience" ;
+    rdfs:domain :Candidate ;
+    rdfs:range :Experience ;
+    owl:minCardinality 0 .
+
+:experienceAtCompany a owl:ObjectProperty ;
+    rdfs:label "Experience At Company" ;
+    rdfs:domain :Experience ;
+    rdfs:range :Company .
+
+:experienceInRole a owl:ObjectProperty ;
+    rdfs:label "Experience In Role" ;
+    rdfs:domain :Experience ;
+    rdfs:range :Role .
+
+:experienceInIndustry a owl:ObjectProperty ;
+    rdfs:label "Experience In Industry" ;
+    rdfs:domain :Experience ;
+    rdfs:range :Industry .
+
+:experienceLeadsTo a owl:ObjectProperty ;
+    rdfs:label "Experience Leads To" ;
+    rdfs:comment "Career progression relationship" ;
+    rdfs:domain :Experience ;
+    rdfs:range :Experience .
+
+:experienceOverlapsWith a owl:ObjectProperty ;
+    rdfs:label "Experience Overlaps With" ;
+    rdfs:domain :Experience ;
+    rdfs:range :Experience .
+
+# Company Relationships
+:companyInIndustry a owl:ObjectProperty ;
+    rdfs:label "Company In Industry" ;
+    rdfs:domain :Company ;
+    rdfs:range :Industry .
+
+:companyCompetitorOf a owl:ObjectProperty ;
+    rdfs:label "Company Competitor Of" ;
+    rdfs:domain :Company ;
+    rdfs:range :Company .
+
+:companyPartnerOf a owl:ObjectProperty ;
+    rdfs:label "Company Partner Of" ;
+    rdfs:domain :Company ;
+    rdfs:range :Company .
+
+# Education Relationships
+:hasEducation a owl:ObjectProperty ;
+    rdfs:label "Has Education" ;
+    rdfs:domain :Candidate ;
+    rdfs:range :Education .
+
+:educationAtInstitution a owl:ObjectProperty ;
+    rdfs:label "Education At Institution" ;
+    rdfs:domain :Education ;
+    rdfs:range :Institution .
+
+:educationRelevantTo a owl:ObjectProperty ;
+    rdfs:label "Education Relevant To" ;
+    rdfs:domain :Education ;
+    rdfs:range [ owl:unionOf ( :Industry :Role :Technology ) ] .
+
+:institutionRankedIn a owl:ObjectProperty ;
+    rdfs:label "Institution Ranked In" ;
+    rdfs:domain :Institution ;
+    rdfs:range :Industry .
+
+# Project Relationships
+:workedOnProject a owl:ObjectProperty ;
+    rdfs:label "Worked On Project" ;
+    rdfs:domain :Candidate ;
+    rdfs:range :Project .
+
+:projectForCompany a owl:ObjectProperty ;
+    rdfs:label "Project For Company" ;
+    rdfs:domain :Project ;
+    rdfs:range :Company .
+
+:projectInIndustry a owl:ObjectProperty ;
+    rdfs:label "Project In Industry" ;
+    rdfs:domain :Project ;
+    rdfs:range :Industry .
+
+:projectBuildsOn a owl:ObjectProperty ;
+    rdfs:label "Project Builds On" ;
+    rdfs:domain :Project ;
+    rdfs:range :Project .
+
+# Certification Relationships
+:hasCertification a owl:ObjectProperty ;
+    rdfs:label "Has Certification" ;
+    rdfs:domain :Candidate ;
+    rdfs:range :Certification .
+
+:certificationIssuedBy a owl:ObjectProperty ;
+    rdfs:label "Certification Issued By" ;
+    rdfs:domain :Certification ;
+    rdfs:range [ owl:unionOf ( :Company :Institution ) ] .
+
+:certificationValidatesSkill a owl:ObjectProperty ;
+    rdfs:label "Certification Validates Skill" ;
+    rdfs:domain :Certification ;
+    rdfs:range :Skill .
+
+:certificationRequiredFor a owl:ObjectProperty ;
+    rdfs:label "Certification Required For" ;
+    rdfs:domain :Certification ;
+    rdfs:range :Role .
+
+# Achievement Relationships
+:hasAchievement a owl:ObjectProperty ;
+    rdfs:label "Has Achievement" ;
+    rdfs:domain :Candidate ;
+    rdfs:range :Achievement .
+
+:achievementInContext a owl:ObjectProperty ;
+    rdfs:label "Achievement In Context" ;
+    rdfs:domain :Achievement ;
+    rdfs:range [ owl:unionOf ( :Experience :Project :Education ) ] .
+
+:achievementRecognizedBy a owl:ObjectProperty ;
+    rdfs:label "Achievement Recognized By" ;
+    rdfs:domain :Achievement ;
+    rdfs:range [ owl:unionOf ( :Company :Institution :Industry ) ] .
+
+# Language Relationships
+:speaksLanguage a owl:ObjectProperty ;
+    rdfs:label "Speaks Language" ;
+    rdfs:domain :Candidate ;
+    rdfs:range :Language .
+
+:languageUsedIn a owl:ObjectProperty ;
+    rdfs:label "Language Used In" ;
+    rdfs:domain :Language ;
+    rdfs:range [ owl:unionOf ( :Experience :Project ) ] .
+
+:languageRequiredFor a owl:ObjectProperty ;
+    rdfs:label "Language Required For" ;
+    rdfs:domain :Language ;
+    rdfs:range [ owl:unionOf ( :Role :Industry ) ] .
+
+# Publication Relationships
+:authoredPublication a owl:ObjectProperty ;
+    rdfs:label "Authored Publication" ;
+    rdfs:domain :Candidate ;
+    rdfs:range :Publication .
+
+:publicationInField a owl:ObjectProperty ;
+    rdfs:label "Publication In Field" ;
+    rdfs:domain :Publication ;
+    rdfs:range [ owl:unionOf ( :Industry :Technology ) ] .
+
+:publicationCites a owl:ObjectProperty ;
+    rdfs:label "Publication Cites" ;
+    rdfs:domain :Publication ;
+    rdfs:range :Publication .
+
+# Reference Relationships
+:hasReference a owl:ObjectProperty ;
+    rdfs:label "Has Reference" ;
+    rdfs:domain :Candidate ;
+    rdfs:range :Reference .
+
+:referenceFromCompany a owl:ObjectProperty ;
+    rdfs:label "Reference From Company" ;
+    rdfs:domain :Reference ;
+    rdfs:range :Company .
+
+:referenceForRole a owl:ObjectProperty ;
+    rdfs:label "Reference For Role" ;
+    rdfs:domain :Reference ;
+    rdfs:range :Role .
+
+# ============================================================================
+# ENHANCED DATA PROPERTIES
+# ============================================================================
+
+# Candidate Properties
+:candidateName a owl:DatatypeProperty ;
+    rdfs:domain :Candidate ;
+    rdfs:range xsd:string .
+
+:email a owl:DatatypeProperty ;
+    rdfs:domain :Candidate ;
+    rdfs:range xsd:string ;
+    owl:maxCardinality 1 .
+
+:phone a owl:DatatypeProperty ;
+    rdfs:domain :Candidate ;
+    rdfs:range xsd:string .
+
+:location a owl:DatatypeProperty ;
+    rdfs:domain :Candidate ;
+    rdfs:range xsd:string .
+
+:linkedinUrl a owl:DatatypeProperty ;
+    rdfs:domain :Candidate ;
+    rdfs:range xsd:anyURI .
+
+:githubUrl a owl:DatatypeProperty ;
+    rdfs:domain :Candidate ;
+    rdfs:range xsd:anyURI .
+
+:portfolioUrl a owl:DatatypeProperty ;
+    rdfs:domain :Candidate ;
+    rdfs:range xsd:anyURI .
+
+:professionalSummary a owl:DatatypeProperty ;
+    rdfs:domain :Candidate ;
+    rdfs:range xsd:string .
+
+:totalYearsOfExperience a owl:DatatypeProperty ;
+    rdfs:domain :Candidate ;
+    rdfs:range xsd:integer .
+
+:careerLevel a owl:DatatypeProperty ;
+    rdfs:domain :Candidate ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "entry" "junior" "mid" "senior" "lead" "principal" "executive" )
+    ] .
+
+:availabilityStatus a owl:DatatypeProperty ;
+    rdfs:domain :Candidate ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "immediately" "2_weeks" "1_month" "3_months" "not_available" )
+    ] .
+
+:salaryExpectation a owl:DatatypeProperty ;
+    rdfs:domain :Candidate ;
+    rdfs:range xsd:decimal .
+
+:workAuthorization a owl:DatatypeProperty ;
+    rdfs:domain :Candidate ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "citizen" "permanent_resident" "h1b" "opt" "other_visa" "requires_sponsorship" )
+    ] .
+
+:remoteWorkPreference a owl:DatatypeProperty ;
+    rdfs:domain :Candidate ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "remote_only" "hybrid" "onsite_only" "flexible" )
+    ] .
+
+# Enhanced Skill Properties
+:skillName a owl:DatatypeProperty ;
+    rdfs:domain :Skill ;
+    rdfs:range xsd:string .
+
+:skillCategory a owl:DatatypeProperty ;
+    rdfs:domain :Skill ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "programming_language" "framework" "database" "cloud_platform" "devops_tool" "soft_skill" "methodology" "domain_knowledge" )
+    ] .
+
+:proficiencyLevel a owl:DatatypeProperty ;
+    rdfs:domain :Skill ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "beginner" "intermediate" "advanced" "expert" )
+    ] .
+
+:yearsOfExperience a owl:DatatypeProperty ;
+    rdfs:domain :Skill ;
+    rdfs:range xsd:integer .
+
+:lastUsedDate a owl:DatatypeProperty ;
+    rdfs:domain :Skill ;
+    rdfs:range xsd:date .
+
+:certificationRequired a owl:DatatypeProperty ;
+    rdfs:domain :Skill ;
+    rdfs:range xsd:boolean .
+
+:marketDemand a owl:DatatypeProperty ;
+    rdfs:domain :Skill ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "low" "medium" "high" "very_high" )
+    ] .
+
+# Enhanced Experience Properties
+:jobTitle a owl:DatatypeProperty ;
+    rdfs:domain :Experience ;
+    rdfs:range xsd:string .
+
+:companyName a owl:DatatypeProperty ;
+    rdfs:domain :Experience ;
+    rdfs:range xsd:string .
+
+:startDate a owl:DatatypeProperty ;
+    rdfs:domain :Experience ;
+    rdfs:range xsd:date .
+
+:endDate a owl:DatatypeProperty ;
+    rdfs:domain :Experience ;
+    rdfs:range xsd:date .
+
+:isCurrent a owl:DatatypeProperty ;
+    rdfs:domain :Experience ;
+    rdfs:range xsd:boolean .
+
+:jobDescription a owl:DatatypeProperty ;
+    rdfs:domain :Experience ;
+    rdfs:range xsd:string .
+
+:keyAchievements a owl:DatatypeProperty ;
+    rdfs:domain :Experience ;
+    rdfs:range xsd:string .
+
+:teamSize a owl:DatatypeProperty ;
+    rdfs:domain :Experience ;
+    rdfs:range xsd:integer .
+
+:budgetManaged a owl:DatatypeProperty ;
+    rdfs:domain :Experience ;
+    rdfs:range xsd:decimal .
+
+:promotionReceived a owl:DatatypeProperty ;
+    rdfs:domain :Experience ;
+    rdfs:range xsd:boolean .
+
+:employmentType a owl:DatatypeProperty ;
+    rdfs:domain :Experience ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "full_time" "part_time" "contract" "freelance" "internship" "volunteer" )
+    ] .
+
+:workLocation a owl:DatatypeProperty ;
+    rdfs:domain :Experience ;
+    rdfs:range xsd:string .
+
+:workArrangement a owl:DatatypeProperty ;
+    rdfs:domain :Experience ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "onsite" "remote" "hybrid" )
+    ] .
+
+# Enhanced Company Properties
+:companyLegalName a owl:DatatypeProperty ;
+    rdfs:domain :Company ;
+    rdfs:range xsd:string .
+
+:industry a owl:DatatypeProperty ;
+    rdfs:domain :Company ;
+    rdfs:range xsd:string .
+
+:companySize a owl:DatatypeProperty ;
+    rdfs:domain :Company ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "startup" "small" "medium" "large" "enterprise" )
+    ] .
+
+:companyLocation a owl:DatatypeProperty ;
+    rdfs:domain :Company ;
+    rdfs:range xsd:string .
+
+:companyType a owl:DatatypeProperty ;
+    rdfs:domain :Company ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "public" "private" "nonprofit" "government" "startup" )
+    ] .
+
+:foundedYear a owl:DatatypeProperty ;
+    rdfs:domain :Company ;
+    rdfs:range xsd:gYear .
+
+:stockSymbol a owl:DatatypeProperty ;
+    rdfs:domain :Company ;
+    rdfs:range xsd:string .
+
+:companyWebsite a owl:DatatypeProperty ;
+    rdfs:domain :Company ;
+    rdfs:range xsd:anyURI .
+
+:revenueRange a owl:DatatypeProperty ;
+    rdfs:domain :Company ;
+    rdfs:range xsd:string .
+
+:employeeCount a owl:DatatypeProperty ;
+    rdfs:domain :Company ;
+    rdfs:range xsd:integer .
+
+# Enhanced Education Properties
+:degreeType a owl:DatatypeProperty ;
+    rdfs:domain :Education ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "high_school" "associate" "bachelor" "master" "phd" "professional" "certificate" )
+    ] .
+
+:fieldOfStudy a owl:DatatypeProperty ;
+    rdfs:domain :Education ;
+    rdfs:range xsd:string .
+
+:institutionName a owl:DatatypeProperty ;
+    rdfs:domain :Education ;
+    rdfs:range xsd:string .
+
+:graduationYear a owl:DatatypeProperty ;
+    rdfs:domain :Education ;
+    rdfs:range xsd:gYear .
+
+:gpa a owl:DatatypeProperty ;
+    rdfs:domain :Education ;
+    rdfs:range xsd:decimal .
+
+:maxGpa a owl:DatatypeProperty ;
+    rdfs:domain :Education ;
+    rdfs:range xsd:decimal .
+
+:honors a owl:DatatypeProperty ;
+    rdfs:domain :Education ;
+    rdfs:range xsd:string .
+
+:thesis a owl:DatatypeProperty ;
+    rdfs:domain :Education ;
+    rdfs:range xsd:string .
+
+:advisor a owl:DatatypeProperty ;
+    rdfs:domain :Education ;
+    rdfs:range xsd:string .
+
+:relevantCoursework a owl:DatatypeProperty ;
+    rdfs:domain :Education ;
+    rdfs:range xsd:string .
+
+:educationStatus a owl:DatatypeProperty ;
+    rdfs:domain :Education ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "completed" "in_progress" "incomplete" )
+    ] .
+
+# Enhanced Project Properties
+:projectName a owl:DatatypeProperty ;
+    rdfs:domain :Project ;
+    rdfs:range xsd:string .
+
+:projectDescription a owl:DatatypeProperty ;
+    rdfs:domain :Project ;
+    rdfs:range xsd:string .
+
+:projectUrl a owl:DatatypeProperty ;
+    rdfs:domain :Project ;
+    rdfs:range xsd:anyURI .
+
+:projectStartDate a owl:DatatypeProperty ;
+    rdfs:domain :Project ;
+    rdfs:range xsd:date .
+
+:projectEndDate a owl:DatatypeProperty ;
+    rdfs:domain :Project ;
+    rdfs:range xsd:date .
+
+:projectRole a owl:DatatypeProperty ;
+    rdfs:domain :Project ;
+    rdfs:range xsd:string .
+
+:projectType a owl:DatatypeProperty ;
+    rdfs:domain :Project ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "personal" "professional" "academic" "open_source" "freelance" )
+    ] .
+
+:projectStatus a owl:DatatypeProperty ;
+    rdfs:domain :Project ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "completed" "in_progress" "on_hold" "cancelled" )
+    ] .
+
+:projectImpact a owl:DatatypeProperty ;
+    rdfs:domain :Project ;
+    rdfs:range xsd:string .
+
+:usersReached a owl:DatatypeProperty ;
+    rdfs:domain :Project ;
+    rdfs:range xsd:integer .
+
+:githubStars a owl:DatatypeProperty ;
+    rdfs:domain :Project ;
+    rdfs:range xsd:integer .
+
+:technologiesUsed a owl:DatatypeProperty ;
+    rdfs:domain :Project ;
+    rdfs:range xsd:string .
+
+# Enhanced Certification Properties
+:certificationName a owl:DatatypeProperty ;
+    rdfs:domain :Certification ;
+    rdfs:range xsd:string .
+
+:issuerName a owl:DatatypeProperty ;
+    rdfs:domain :Certification ;
+    rdfs:range xsd:string .
+
+:dateObtained a owl:DatatypeProperty ;
+    rdfs:domain :Certification ;
+    rdfs:range xsd:date .
+
+:expiryDate a owl:DatatypeProperty ;
+    rdfs:domain :Certification ;
+    rdfs:range xsd:date .
+
+:credentialId a owl:DatatypeProperty ;
+    rdfs:domain :Certification ;
+    rdfs:range xsd:string .
+
+:credentialUrl a owl:DatatypeProperty ;
+    rdfs:domain :Certification ;
+    rdfs:range xsd:anyURI .
+
+:certificationLevel a owl:DatatypeProperty ;
+    rdfs:domain :Certification ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "foundation" "associate" "professional" "expert" "master" )
+    ] .
+
+:isActive a owl:DatatypeProperty ;
+    rdfs:domain :Certification ;
+    rdfs:range xsd:boolean .
+
+:renewalRequired a owl:DatatypeProperty ;
+    rdfs:domain :Certification ;
+    rdfs:range xsd:boolean .
+
+:studyHours a owl:DatatypeProperty ;
+    rdfs:domain :Certification ;
+    rdfs:range xsd:integer .
+
+:examScore a owl:DatatypeProperty ;
+    rdfs:domain :Certification ;
+    rdfs:range xsd:decimal .
+
+# Enhanced Achievement Properties
+:achievementTitle a owl:DatatypeProperty ;
+    rdfs:domain :Achievement ;
+    rdfs:range xsd:string .
+
+:achievementDescription a owl:DatatypeProperty ;
+    rdfs:domain :Achievement ;
+    rdfs:range xsd:string .
+
+:achievementDate a owl:DatatypeProperty ;
+    rdfs:domain :Achievement ;
+    rdfs:range xsd:date .
+
+:achievementIssuer a owl:DatatypeProperty ;
+    rdfs:domain :Achievement ;
+    rdfs:range xsd:string .
+
+:achievementType a owl:DatatypeProperty ;
+    rdfs:domain :Achievement ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "award" "recognition" "competition" "publication" "patent" "speaking" )
+    ] .
+
+:achievementLevel a owl:DatatypeProperty ;
+    rdfs:domain :Achievement ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "local" "regional" "national" "international" )
+    ] .
+
+:monetaryValue a owl:DatatypeProperty ;
+    rdfs:domain :Achievement ;
+    rdfs:range xsd:decimal .
+
+:competitionRank a owl:DatatypeProperty ;
+    rdfs:domain :Achievement ;
+    rdfs:range xsd:integer .
+
+:totalParticipants a owl:DatatypeProperty ;
+    rdfs:domain :Achievement ;
+    rdfs:range xsd:integer .
+
+# Enhanced Language Properties
+:languageName a owl:DatatypeProperty ;
+    rdfs:domain :Language ;
+    rdfs:range xsd:string .
+
+:languageProficiency a owl:DatatypeProperty ;
+    rdfs:domain :Language ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "A1" "A2" "B1" "B2" "C1" "C2" "native" )
+    ] .
+
+:speakingLevel a owl:DatatypeProperty ;
+    rdfs:domain :Language ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "beginner" "intermediate" "advanced" "fluent" "native" )
+    ] .
+
+:writingLevel a owl:DatatypeProperty ;
+    rdfs:domain :Language ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "beginner" "intermediate" "advanced" "fluent" "native" )
+    ] .
+
+:readingLevel a owl:DatatypeProperty ;
+    rdfs:domain :Language ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "beginner" "intermediate" "advanced" "fluent" "native" )
+    ] .
+
+:certificationObtained a owl:DatatypeProperty ;
+    rdfs:domain :Language ;
+    rdfs:range xsd:string .
+
+:testScore a owl:DatatypeProperty ;
+    rdfs:domain :Language ;
+    rdfs:range xsd:string .
+
+# Enhanced Publication Properties
+:publicationTitle a owl:DatatypeProperty ;
+    rdfs:domain :Publication ;
+    rdfs:range xsd:string .
+
+:publicationVenue a owl:DatatypeProperty ;
+    rdfs:domain :Publication ;
+    rdfs:range xsd:string .
+
+:publicationDate a owl:DatatypeProperty ;
+    rdfs:domain :Publication ;
+    rdfs:range xsd:date .
+
+:publicationUrl a owl:DatatypeProperty ;
+    rdfs:domain :Publication ;
+    rdfs:range xsd:anyURI .
+
+:doi a owl:DatatypeProperty ;
+    rdfs:domain :Publication ;
+    rdfs:range xsd:string .
+
+:publicationType a owl:DatatypeProperty ;
+    rdfs:domain :Publication ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "journal" "conference" "workshop" "book" "chapter" "thesis" "patent" "preprint" )
+    ] .
+
+:citationCount a owl:DatatypeProperty ;
+    rdfs:domain :Publication ;
+    rdfs:range xsd:integer .
+
+:hIndex a owl:DatatypeProperty ;
+    rdfs:domain :Publication ;
+    rdfs:range xsd:integer .
+
+:impactFactor a owl:DatatypeProperty ;
+    rdfs:domain :Publication ;
+    rdfs:range xsd:decimal .
+
+:coAuthors a owl:DatatypeProperty ;
+    rdfs:domain :Publication ;
+    rdfs:range xsd:string .
+
+:abstract a owl:DatatypeProperty ;
+    rdfs:domain :Publication ;
+    rdfs:range xsd:string .
+
+:keywords a owl:DatatypeProperty ;
+    rdfs:domain :Publication ;
+    rdfs:range xsd:string .
+
+# Reference Properties
+:referenceName a owl:DatatypeProperty ;
+    rdfs:domain :Reference ;
+    rdfs:range xsd:string .
+
+:referenceTitle a owl:DatatypeProperty ;
+    rdfs:domain :Reference ;
+    rdfs:range xsd:string .
+
+:referenceCompany a owl:DatatypeProperty ;
+    rdfs:domain :Reference ;
+    rdfs:range xsd:string .
+
+:referenceEmail a owl:DatatypeProperty ;
+    rdfs:domain :Reference ;
+    rdfs:range xsd:string .
+
+:referencePhone a owl:DatatypeProperty ;
+    rdfs:domain :Reference ;
+    rdfs:range xsd:string .
+
+:relationshipType a owl:DatatypeProperty ;
+    rdfs:domain :Reference ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "supervisor" "colleague" "subordinate" "client" "mentor" "professor" )
+    ] .
+
+:yearsKnown a owl:DatatypeProperty ;
+    rdfs:domain :Reference ;
+    rdfs:range xsd:integer .
+
+:referenceNotes a owl:DatatypeProperty ;
+    rdfs:domain :Reference ;
+    rdfs:range xsd:string .
+
+:contactPermission a owl:DatatypeProperty ;
+    rdfs:domain :Reference ;
+    rdfs:range xsd:boolean .

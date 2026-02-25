@@ -1,0 +1,248 @@
+# AML (Anti-Money Laundering) Ontology
+# For extracting knowledge from AML compliance documents
+
+metadata:
+  name: "AML Compliance Ontology"
+  version: "1.0.0"
+  domain: "aml"
+  description: "Anti-Money Laundering ontology for compliance, risk assessment, and suspicious activity detection"
+
+entity_types:
+  - name: "SuspiciousActivity"
+    description: "A suspicious activity or transaction pattern"
+    extraction_strategy: "llm"
+    aliases: ["SAR", "Suspicious Transaction", "Red Flag"]
+    properties:
+      - name: "activity_id"
+        data_type: "string"
+        required: true
+        is_identity: true
+      - name: "activity_type"
+        data_type: "string"
+        required: true
+        validation_rules:
+          allowed_values: ["structuring", "layering", "integration", "smurfing", "round_tripping", "shell_company", "trade_based", "other"]
+      - name: "description"
+        data_type: "string"
+        required: true
+      - name: "detection_date"
+        data_type: "date"
+      - name: "risk_score"
+        data_type: "float"
+        validation_rules:
+          min_value: 0
+          max_value: 100
+      - name: "status"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["detected", "investigating", "escalated", "filed", "closed"]
+
+  - name: "RiskIndicator"
+    description: "A risk indicator or red flag"
+    extraction_strategy: "hybrid"
+    aliases: ["Red Flag", "Warning Sign", "Risk Signal"]
+    extraction_patterns:
+      - pattern: "\\b(structuring|smurfing|layering|round[- ]?tripping)\\b"
+        description: "Money laundering techniques"
+      - pattern: "\\b(shell company|offshore|tax haven|bearer shares)\\b"
+        description: "High-risk entities"
+      - pattern: "\\b(PEP|politically exposed|sanctions|watchlist)\\b"
+        description: "High-risk individuals"
+    properties:
+      - name: "indicator_name"
+        data_type: "string"
+        required: true
+        is_identity: true
+      - name: "category"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["behavioral", "transactional", "geographic", "product", "customer"]
+      - name: "severity"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["low", "medium", "high", "critical"]
+      - name: "description"
+        data_type: "string"
+
+  - name: "Investigation"
+    description: "An AML investigation case"
+    extraction_strategy: "llm"
+    aliases: ["Case", "AML Case", "Compliance Case"]
+    properties:
+      - name: "case_id"
+        data_type: "string"
+        required: true
+        is_identity: true
+      - name: "case_type"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["sar", "ctr", "kyc_review", "sanctions_hit", "internal_referral"]
+      - name: "status"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["open", "in_progress", "pending_review", "escalated", "closed"]
+      - name: "priority"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["low", "medium", "high", "urgent"]
+      - name: "opened_date"
+        data_type: "date"
+      - name: "closed_date"
+        data_type: "date"
+      - name: "outcome"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["filed_sar", "no_action", "account_closed", "referred_to_law_enforcement"]
+
+  - name: "SanctionedEntity"
+    description: "An entity on a sanctions list"
+    extraction_strategy: "llm"
+    aliases: ["Sanctioned Party", "Blocked Person", "SDN"]
+    properties:
+      - name: "entity_name"
+        data_type: "string"
+        required: true
+        is_identity: true
+      - name: "entity_type"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["individual", "organization", "vessel", "aircraft"]
+      - name: "sanctions_list"
+        data_type: "string"
+        description: "OFAC, EU, UN, etc."
+      - name: "listing_date"
+        data_type: "date"
+      - name: "country"
+        data_type: "string"
+
+  - name: "PEP"
+    description: "Politically Exposed Person"
+    extraction_strategy: "llm"
+    aliases: ["Politically Exposed Person", "Political Figure"]
+    properties:
+      - name: "name"
+        data_type: "string"
+        required: true
+        is_identity: true
+        is_pii: true
+      - name: "position"
+        data_type: "string"
+        description: "Political position or role"
+      - name: "country"
+        data_type: "string"
+      - name: "pep_category"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["head_of_state", "senior_politician", "senior_government", "judicial", "military", "state_enterprise", "international_org"]
+      - name: "risk_level"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["low", "medium", "high"]
+
+  - name: "Jurisdiction"
+    description: "A geographic jurisdiction with AML relevance"
+    extraction_strategy: "llm"
+    aliases: ["Country", "Territory", "Region"]
+    properties:
+      - name: "name"
+        data_type: "string"
+        required: true
+        is_identity: true
+      - name: "iso_code"
+        data_type: "string"
+      - name: "risk_rating"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["low", "medium", "high", "prohibited"]
+      - name: "fatf_status"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["member", "grey_list", "black_list", "non_member"]
+
+  - name: "ComplianceRule"
+    description: "A compliance rule or regulation"
+    extraction_strategy: "llm"
+    aliases: ["Regulation", "Rule", "Requirement"]
+    properties:
+      - name: "rule_id"
+        data_type: "string"
+        required: true
+        is_identity: true
+      - name: "rule_name"
+        data_type: "string"
+        required: true
+      - name: "regulation"
+        data_type: "string"
+        description: "BSA, AML Act, FATF Recommendation, etc."
+      - name: "description"
+        data_type: "string"
+      - name: "effective_date"
+        data_type: "date"
+
+relationship_types:
+  - name: "TRIGGERED"
+    source_types: ["RiskIndicator"]
+    target_types: ["SuspiciousActivity"]
+    description: "Risk indicator triggered suspicious activity detection"
+
+  - name: "INVOLVES"
+    source_types: ["SuspiciousActivity", "Investigation"]
+    target_types: ["Customer", "Account", "Transaction"]
+    description: "Activity or investigation involves an entity"
+
+  - name: "INVESTIGATED_BY"
+    source_types: ["SuspiciousActivity"]
+    target_types: ["Investigation"]
+    description: "Suspicious activity is investigated by a case"
+
+  - name: "MATCHES"
+    source_types: ["Customer"]
+    target_types: ["SanctionedEntity", "PEP"]
+    description: "Customer matches a sanctioned entity or PEP"
+    properties:
+      - name: "match_score"
+        data_type: "float"
+      - name: "match_type"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["exact", "fuzzy", "alias", "related"]
+
+  - name: "LOCATED_IN"
+    source_types: ["Customer", "Transaction", "Account"]
+    target_types: ["Jurisdiction"]
+    description: "Entity is located in or associated with a jurisdiction"
+
+  - name: "VIOLATES"
+    source_types: ["SuspiciousActivity"]
+    target_types: ["ComplianceRule"]
+    description: "Activity potentially violates a compliance rule"
+
+  - name: "ASSOCIATED_WITH"
+    source_types: ["PEP", "SanctionedEntity"]
+    target_types: ["Customer"]
+    description: "High-risk entity is associated with a customer"
+    properties:
+      - name: "relationship"
+        data_type: "string"
+        validation_rules:
+          allowed_values: ["self", "family", "close_associate", "business_partner"]
+
+# Slices for specific use cases
+slices:
+  - name: "SAR Filing Slice"
+    description: "Classes for SAR filing process"
+    included_classes: ["SuspiciousActivity", "Investigation", "RiskIndicator"]
+    included_relationships: ["TRIGGERED", "INVESTIGATED_BY"]
+    use_case: "sar_filing"
+
+  - name: "Sanctions Screening Slice"
+    description: "Classes for sanctions screening"
+    included_classes: ["SanctionedEntity", "PEP", "Jurisdiction"]
+    included_relationships: ["MATCHES", "LOCATED_IN", "ASSOCIATED_WITH"]
+    use_case: "sanctions_screening"
+
+  - name: "Risk Assessment Slice"
+    description: "Classes for customer risk assessment"
+    included_classes: ["RiskIndicator", "Jurisdiction", "PEP"]
+    included_relationships: ["LOCATED_IN", "MATCHES"]
+    use_case: "risk_assessment"

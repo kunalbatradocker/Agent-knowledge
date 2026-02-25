@@ -1,0 +1,359 @@
+# Resume/CV Ontology
+# For extracting structured knowledge from resumes and CVs
+
+metadata:
+  name: "Resume Ontology"
+  version: "1.0.0"
+  domain: "resume"
+  description: "Ontology for extracting knowledge from resumes and CVs"
+
+entity_types:
+  - name: "Candidate"
+    description: "The person whose resume this is"
+    extraction_strategy: "llm"
+    aliases: ["Person", "Individual", "Applicant"]
+    properties:
+      - name: "name"
+        data_type: "string"
+        required: true
+        description: "Full name of the candidate"
+      - name: "email"
+        data_type: "string"
+        required: false
+        validation_rules:
+          pattern: "^[\\w.-]+@[\\w.-]+\\.\\w+$"
+      - name: "phone"
+        data_type: "string"
+        required: false
+      - name: "location"
+        data_type: "string"
+        required: false
+        description: "City, State/Country"
+      - name: "linkedin"
+        data_type: "string"
+        required: false
+      - name: "github"
+        data_type: "string"
+        required: false
+      - name: "portfolio"
+        data_type: "string"
+        required: false
+      - name: "summary"
+        data_type: "string"
+        required: false
+        description: "Professional summary or objective"
+
+  - name: "Skill"
+    description: "Technical or soft skill"
+    extraction_strategy: "hybrid"
+    aliases: ["Technology", "Tool", "Competency"]
+    extraction_patterns:
+      - pattern: "\\b(Python|Java|JavaScript|TypeScript|C\\+\\+|C#|Go|Rust|Ruby|PHP|Swift|Kotlin)\\b"
+        description: "Programming languages"
+      - pattern: "\\b(React|Angular|Vue|Node\\.js|Django|Flask|Spring|Express|FastAPI)\\b"
+        description: "Frameworks"
+      - pattern: "\\b(AWS|Azure|GCP|Docker|Kubernetes|Terraform|Jenkins|Git)\\b"
+        description: "DevOps/Cloud tools"
+      - pattern: "\\b(SQL|PostgreSQL|MySQL|MongoDB|Redis|Elasticsearch|Cassandra)\\b"
+        description: "Databases"
+    properties:
+      - name: "name"
+        data_type: "string"
+        required: true
+      - name: "category"
+        data_type: "string"
+        required: false
+        validation_rules:
+          allowed_values: ["programming_language", "framework", "database", "cloud", "devops", "soft_skill", "tool", "methodology", "other"]
+      - name: "proficiency"
+        data_type: "string"
+        required: false
+        validation_rules:
+          allowed_values: ["beginner", "intermediate", "advanced", "expert"]
+      - name: "years_experience"
+        data_type: "integer"
+        required: false
+
+  - name: "Experience"
+    description: "Work experience or job position"
+    extraction_strategy: "llm"
+    aliases: ["Job", "Position", "Role", "Employment"]
+    properties:
+      - name: "title"
+        data_type: "string"
+        required: false
+        description: "Job title"
+      - name: "company"
+        data_type: "string"
+        required: false
+      - name: "location"
+        data_type: "string"
+        required: false
+      - name: "start_date"
+        data_type: "string"
+        required: false
+      - name: "end_date"
+        data_type: "string"
+        required: false
+        description: "End date or 'Present'"
+      - name: "description"
+        data_type: "string"
+        required: false
+      - name: "is_current"
+        data_type: "boolean"
+        required: false
+
+  - name: "Company"
+    description: "Organization or employer"
+    extraction_strategy: "llm"
+    aliases: ["Organization", "Employer", "Firm"]
+    properties:
+      - name: "name"
+        data_type: "string"
+        required: true
+      - name: "industry"
+        data_type: "string"
+        required: false
+      - name: "location"
+        data_type: "string"
+        required: false
+      - name: "size"
+        data_type: "string"
+        required: false
+        validation_rules:
+          allowed_values: ["startup", "small", "medium", "large", "enterprise"]
+
+  - name: "Education"
+    description: "Educational qualification"
+    extraction_strategy: "llm"
+    aliases: ["Degree", "Qualification", "Academic"]
+    properties:
+      - name: "degree"
+        data_type: "string"
+        required: false
+        description: "e.g., Bachelor's, Master's, PhD"
+      - name: "field"
+        data_type: "string"
+        required: false
+        description: "Field of study or major"
+      - name: "institution"
+        data_type: "string"
+        required: false
+      - name: "location"
+        data_type: "string"
+        required: false
+      - name: "graduation_year"
+        data_type: "integer"
+        required: false
+        validation_rules:
+          min_value: 1950
+          max_value: 2030
+      - name: "gpa"
+        data_type: "string"
+        required: false
+
+  - name: "Institution"
+    description: "Educational institution"
+    extraction_strategy: "llm"
+    aliases: ["University", "College", "School"]
+    properties:
+      - name: "name"
+        data_type: "string"
+        required: true
+      - name: "type"
+        data_type: "string"
+        required: false
+        validation_rules:
+          allowed_values: ["university", "college", "bootcamp", "online", "certification_body"]
+      - name: "location"
+        data_type: "string"
+        required: false
+
+  - name: "Certification"
+    description: "Professional certification or license"
+    extraction_strategy: "llm"
+    aliases: ["Certificate", "License", "Credential"]
+    properties:
+      - name: "name"
+        data_type: "string"
+        required: true
+      - name: "issuer"
+        data_type: "string"
+        required: false
+      - name: "date_obtained"
+        data_type: "string"
+        required: false
+      - name: "expiry_date"
+        data_type: "string"
+        required: false
+      - name: "credential_id"
+        data_type: "string"
+        required: false
+
+  - name: "Project"
+    description: "Personal or professional project"
+    extraction_strategy: "llm"
+    aliases: ["Portfolio Project", "Side Project"]
+    properties:
+      - name: "name"
+        data_type: "string"
+        required: true
+      - name: "description"
+        data_type: "string"
+        required: false
+      - name: "url"
+        data_type: "string"
+        required: false
+      - name: "technologies"
+        data_type: "string"
+        required: false
+        description: "Comma-separated list of technologies used"
+      - name: "role"
+        data_type: "string"
+        required: false
+
+  - name: "Achievement"
+    description: "Award, recognition, or notable accomplishment"
+    extraction_strategy: "llm"
+    aliases: ["Award", "Recognition", "Accomplishment"]
+    properties:
+      - name: "title"
+        data_type: "string"
+        required: true
+      - name: "description"
+        data_type: "string"
+        required: false
+      - name: "date"
+        data_type: "string"
+        required: false
+      - name: "issuer"
+        data_type: "string"
+        required: false
+
+  - name: "Language"
+    description: "Spoken/written language proficiency"
+    extraction_strategy: "llm"
+    properties:
+      - name: "name"
+        data_type: "string"
+        required: true
+      - name: "proficiency"
+        data_type: "string"
+        required: false
+        validation_rules:
+          allowed_values: ["native", "fluent", "professional", "intermediate", "basic"]
+
+  - name: "Publication"
+    description: "Research paper, article, or book"
+    extraction_strategy: "llm"
+    aliases: ["Paper", "Article", "Research"]
+    properties:
+      - name: "title"
+        data_type: "string"
+        required: true
+      - name: "venue"
+        data_type: "string"
+        required: false
+        description: "Journal, conference, or publication venue"
+      - name: "date"
+        data_type: "string"
+        required: false
+      - name: "url"
+        data_type: "string"
+        required: false
+
+relationship_types:
+  - name: "HAS_SKILL"
+    source_types: ["Candidate"]
+    target_types: ["Skill"]
+    description: "Candidate possesses this skill"
+    properties:
+      - name: "proficiency"
+        data_type: "string"
+        required: false
+      - name: "years"
+        data_type: "integer"
+        required: false
+
+  - name: "WORKED_AT"
+    source_types: ["Candidate"]
+    target_types: ["Company"]
+    description: "Candidate worked at this company"
+    properties:
+      - name: "title"
+        data_type: "string"
+        required: false
+      - name: "start_date"
+        data_type: "string"
+        required: false
+      - name: "end_date"
+        data_type: "string"
+        required: false
+      - name: "is_current"
+        data_type: "boolean"
+        required: false
+
+  - name: "HAS_EXPERIENCE"
+    source_types: ["Candidate"]
+    target_types: ["Experience"]
+    description: "Candidate has this work experience"
+
+  - name: "AT_COMPANY"
+    source_types: ["Experience"]
+    target_types: ["Company"]
+    description: "Experience was at this company"
+
+  - name: "USED_SKILL"
+    source_types: ["Experience", "Project"]
+    target_types: ["Skill"]
+    description: "Skill was used in this experience or project"
+
+  - name: "HAS_EDUCATION"
+    source_types: ["Candidate"]
+    target_types: ["Education"]
+    description: "Candidate has this educational qualification"
+
+  - name: "STUDIED_AT"
+    source_types: ["Candidate", "Education"]
+    target_types: ["Institution"]
+    description: "Candidate studied at this institution"
+
+  - name: "HAS_CERTIFICATION"
+    source_types: ["Candidate"]
+    target_types: ["Certification"]
+    description: "Candidate holds this certification"
+
+  - name: "ISSUED_BY"
+    source_types: ["Certification"]
+    target_types: ["Company", "Institution"]
+    description: "Certification was issued by this organization"
+
+  - name: "WORKED_ON"
+    source_types: ["Candidate"]
+    target_types: ["Project"]
+    description: "Candidate worked on this project"
+
+  - name: "HAS_ACHIEVEMENT"
+    source_types: ["Candidate"]
+    target_types: ["Achievement"]
+    description: "Candidate has this achievement"
+
+  - name: "SPEAKS"
+    source_types: ["Candidate"]
+    target_types: ["Language"]
+    description: "Candidate speaks this language"
+
+  - name: "AUTHORED"
+    source_types: ["Candidate"]
+    target_types: ["Publication"]
+    description: "Candidate authored this publication"
+
+  - name: "RELATED_TO"
+    source_types: ["Skill"]
+    target_types: ["Skill"]
+    description: "Skills that are related or commonly used together"
+
+  - name: "REQUIRES"
+    source_types: ["Experience", "Certification"]
+    target_types: ["Skill"]
+    description: "This experience or certification requires this skill"

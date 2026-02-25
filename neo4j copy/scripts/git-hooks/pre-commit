@@ -1,0 +1,23 @@
+#!/bin/bash
+# .git/hooks/pre-commit
+# Auto-update guidelines when architectural patterns change
+
+echo "🔍 Checking for architectural changes..."
+
+# Check if key architectural files changed
+ARCH_FILES="server/index.js server/config/ server/middleware/ server/services/ package.json"
+CHANGED_ARCH_FILES=$(git diff --cached --name-only | grep -E "(${ARCH_FILES//\//\/})")
+
+if [ ! -z "$CHANGED_ARCH_FILES" ]; then
+    echo "📝 Architectural changes detected, updating guidelines..."
+    
+    # Run guidelines update script
+    node scripts/update-guidelines.js
+    
+    # Add updated guidelines to commit
+    git add DEVELOPMENT_GUIDELINES.md
+    
+    echo "✅ Guidelines updated automatically"
+fi
+
+exit 0

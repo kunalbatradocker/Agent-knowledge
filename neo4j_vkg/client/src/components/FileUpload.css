@@ -1,0 +1,279 @@
+/* File Upload - Minimal Black & White */
+
+.file-upload {
+  padding: 20px;
+}
+
+.fu-dropzone {
+  border: 2px dashed #ddd;
+  border-radius: 6px;
+  padding: 40px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #fafafa;
+}
+
+.fu-dropzone:hover {
+  border-color: #999;
+  background: #f5f5f5;
+}
+
+.fu-dropzone.active {
+  border-color: #000;
+  background: #f0f0f0;
+}
+
+.fu-dropzone-icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.fu-dropzone h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.fu-dropzone p {
+  margin: 0;
+  font-size: 13px;
+  color: #555;
+}
+
+.fu-file-list {
+  margin-top: 20px;
+}
+
+.fu-file-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.fu-file-icon {
+  font-size: 20px;
+  opacity: 0.6;
+}
+
+.fu-file-info {
+  flex: 1;
+}
+
+.fu-file-name {
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.fu-file-size {
+  font-size: 11px;
+  color: #555;
+}
+
+.fu-file-status {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.fu-file-status.uploading {
+  color: #c90;
+}
+
+.fu-file-status.complete {
+  color: #333;
+}
+
+.fu-file-status.error {
+  color: #c00;
+}
+
+.fu-file-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  color: #555;
+  padding: 4px;
+}
+
+.fu-file-remove:hover {
+  color: #c00;
+}
+
+.fu-progress {
+  height: 4px;
+  background: #e5e5e5;
+  border-radius: 2px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.fu-progress-bar {
+  height: 100%;
+  background: #000;
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+
+.fu-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.fu-btn {
+  padding: 10px 18px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  background: #fff;
+}
+
+.fu-btn:hover {
+  background: #f5f5f5;
+}
+
+.fu-btn.primary {
+  background: #000;
+  color: #fff;
+  border-color: #000;
+}
+
+.fu-btn.primary:hover {
+  background: #333;
+}
+
+.fu-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Ontology Selector Styles */
+.ontology-selector-container {
+  flex: 1.5;
+}
+
+.ontology-selector-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ontology-selector-row .loading-indicator {
+  font-size: 14px;
+}
+
+.option-dropdown.no-ontology {
+  border-color: #f0ad4e;
+  background-color: #fffbf0;
+}
+
+.ontology-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: #fff8e6;
+  border: 1px solid #f0ad4e;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #8a6d3b;
+}
+
+.ontology-warning .warning-icon {
+  font-size: 14px;
+}
+
+.ontology-setup-prompt {
+  margin-top: 8px;
+  padding: 10px;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+}
+
+.ontology-setup-prompt p {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #666;
+}
+
+.global-ontology-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ontology-chip {
+  padding: 4px 10px;
+  font-size: 11px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ontology-chip:hover {
+  background: #f0f0f0;
+  border-color: #999;
+}
+
+.ontology-chip:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ontology-info {
+  color: #28a745;
+  font-weight: 500;
+}
+
+/* Option group styling */
+select optgroup {
+  font-weight: 600;
+  color: #333;
+}
+
+select option:disabled {
+  color: #999;
+  font-style: italic;
+}
+
+/* CSV Chunking Option */
+.csv-chunking-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #eee;
+}
+
+.csv-chunking-option .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.csv-chunking-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.csv-chunking-option .option-help {
+  color: #999;
+  cursor: help;
+}

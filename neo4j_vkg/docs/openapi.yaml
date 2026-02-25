@@ -1,0 +1,2542 @@
+openapi: 3.0.3
+info:
+  title: Purple Fabric - Enterprise Knowledge Graph Platform API
+  description: |
+    REST API for the Purple Fabric Enterprise Knowledge Graph Platform.
+    Provides document ingestion, ontology management, graph querying, entity resolution,
+    multi-tenant workspace management, and AI-powered extraction services.
+
+    ## Authentication
+    All endpoints (except `/api/auth/login`, `/api/auth/refresh`, `/api/auth/logout`, and `/api/health`)
+    require a Bearer JWT token in the `Authorization` header.
+
+    Access tokens expire in 15 minutes. Use the refresh token endpoint to obtain new tokens.
+
+    ## CSRF Protection
+    All state-changing requests (POST, PUT, DELETE) must include the `X-Requested-With` header.
+
+    ## Role-Based Access Control (RBAC)
+    Four roles with hierarchical permissions:
+    - **viewer** — Read-only access (dashboards, queries, chat)
+    - **member** — Upload docs, run extractions, contribute content
+    - **manager** — Manage ontologies, clear data, organize workspace
+    - **admin** — Full access including user management and system settings
+
+    ## Multi-Tenant Architecture
+    Resources are scoped to tenants and workspaces. Pass `tenant_id` and `workspace_id`
+    via query parameters or the `X-Tenant-ID` / `X-Workspace-ID` headers.
+  version: 1.0.0
+  contact:
+    name: Purple Fabric Team
+
+servers:
+  - url: http://localhost:5002
+    description: Local development server
+
+tags:
+  - name: Auth
+    description: Authentication, user management, and LLM token management
+  - name: Health
+    description: System health check
+  - name: Chat
+    description: Conversational AI interface with RAG
+  - name: Documents
+    description: Document upload, staging, and management
+  - name: Extraction
+    description: Document processing and entity extraction
+  - name: Ontology
+    description: Ontology templates, stats, and schema management
+  - name: OWL
+    description: OWL/RDF ontology import, export, and management
+  - name: Ontology Versions
+    description: Ontology version control, branching, and tagging
+  - name: Ontology Packs
+    description: Ontology pack listing and forking
+  - name: Entities
+    description: Entity (graph node instance) CRUD operations
+  - name: Graph
+    description: Graph visualization, statistics, and Cypher queries
+  - name: SPARQL
+    description: SPARQL query interface for RDF data
+  - name: Folders
+    description: Folder management and document organization
+  - name: Tenants
+    description: Tenant and workspace management
+  - name: Admin
+    description: Database management, cleanup, and system administration
+  - name: Enterprise
+    description: Entity resolution, data connectors, lineage, schema versioning, RBAC, graph algorithms
+  - name: Review Queue
+    description: Human review workflow for extractions
+  - name: Versioning
+    description: Extraction versioning and rollback
+  - name: Identity
+    description: Entity identity merge, split, and duplicate detection
+  - name: Metrics
+    description: Health metrics, trust scoring, and analytics
+  - name: Settings
+    description: Application settings management
+  - name: Sync
+    description: GraphDB to Neo4j synchronization
+  - name: JDBC
+    description: External database connector
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    TenantId:
+      name: tenant_id
+      in: query
+      schema: { type: string }
+      description: Tenant ID for multi-tenant scoping
+    WorkspaceId:
+      name: workspace_id
+      in: query
+      schema: { type: string }
+      description: Workspace ID for workspace scoping
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, default: 50 }
+    Offset:
+      name: offset
+      in: query
+      schema: { type: integer, default: 0 }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+    Success:
+      type: object
+      properties:
+        success: { type: boolean }
+    User:
+      type: object
+      properties:
+        email: { type: string }
+        name: { type: string }
+        role: { type: string, enum: [viewer, member, manager, admin] }
+        workspaces: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+    AuthResponse:
+      type: object
+      properties:
+        token: { type: string, description: JWT access token (15m expiry) }
+        refreshToken: { type: string, description: Refresh token (7d expiry) }
+        user: { $ref: '#/components/schemas/User' }
+    Conversation:
+      type: object
+      properties:
+        id: { type: string }
+        createdAt: { type: string, format: date-time }
+        messageCount: { type: integer }
+    Entity:
+      type: object
+      properties:
+        id: { type: string }
+        label: { type: string }
+        type: { type: string }
+        properties: { type: object }
+    Ontology:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        scope: { type: string, enum: [global, tenant, workspace] }
+        entityTypes: { type: array, items: { type: object } }
+        relationships: { type: array, items: { type: object } }
+    Tenant:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        name: { type: string }
+        status: { type: string }
+    Workspace:
+      type: object
+      properties:
+        workspace_id: { type: string }
+        name: { type: string }
+        tenant_id: { type: string }
+    AuditEntry:
+      type: object
+      properties:
+        timestamp: { type: string, format: date-time }
+        userId: { type: string }
+        action: { type: string }
+        resource: { type: string }
+        method: { type: string }
+        statusCode: { type: integer }
+        success: { type: boolean }
+        ip: { type: string }
+        workspaceId: { type: string }
+        durationMs: { type: integer }
+        requestBody: { type: object, nullable: true }
+        responseBody: { type: object, nullable: true }
+  headers:
+    X-Requested-With:
+      description: Required for CSRF protection on state-changing requests
+      schema: { type: string }
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ============================================================
+  # HEALTH
+  # ============================================================
+  /api/health:
+    get:
+      tags: [Health]
+      summary: System health check
+      security: []
+      responses:
+        '200':
+          description: Health status with database connection info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  connections:
+                    type: object
+                    properties:
+                      graphdb: { type: object }
+                      neo4j: { type: object }
+                      redis: { type: object }
+                      ollama: { type: object }
+
+  # ============================================================
+  # AUTH
+  # ============================================================
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: User login
+      security: []
+      description: Authenticate with email and password. Returns JWT access token (15m) and refresh token (7d). Rate limited to 15 attempts per 15 minutes per IP. Account locks after 5 failed attempts for 15 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '401': { description: Invalid credentials }
+        '423': { description: Account locked }
+        '429': { description: Rate limited }
+
+  /api/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200':
+          description: New token pair
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '401': { description: Invalid or expired refresh token }
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout (revoke refresh token)
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200':
+          description: Always succeeds
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Success' }
+
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current user profile
+      responses:
+        '200':
+          description: User profile with permissions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+
+  /api/auth/me/password:
+    put:
+      tags: [Auth]
+      summary: Change own password
+      description: "Password must contain: 8+ chars, uppercase, lowercase, number, special character"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+      responses:
+        '200': { description: Password changed }
+        '400': { description: Password complexity requirements not met }
+
+  /api/auth/users:
+    get:
+      tags: [Auth]
+      summary: List all users (admin only)
+      responses:
+        '200':
+          description: Array of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/User' }
+    post:
+      tags: [Auth]
+      summary: Create a new user (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+                name: { type: string }
+                role: { type: string, enum: [viewer, member, manager, admin] }
+                workspaces: { type: array, items: { type: string } }
+      responses:
+        '201': { description: User created }
+        '409': { description: User already exists }
+
+  /api/auth/users/{email}:
+    put:
+      tags: [Auth]
+      summary: Update a user (admin only)
+      parameters:
+        - name: email
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                role: { type: string, enum: [viewer, member, manager, admin] }
+                password: { type: string }
+                workspaces: { type: array, items: { type: string } }
+      responses:
+        '200': { description: User updated }
+        '404': { description: User not found }
+    delete:
+      tags: [Auth]
+      summary: Delete a user (admin only)
+      parameters:
+        - name: email
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: User deleted }
+        '403': { description: Cannot delete master admin }
+
+  /api/auth/llm-token/status:
+    get:
+      tags: [Auth]
+      summary: Get LLM token status for current user
+      responses:
+        '200':
+          description: Token status including server and user token info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider: { type: string }
+                  model: { type: string }
+                  server: { type: object }
+                  user: { type: object }
+
+  /api/auth/llm-token:
+    post:
+      tags: [Auth]
+      summary: Save per-user Bedrock bearer token (encrypted at rest)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        '200': { description: Token stored }
+    delete:
+      tags: [Auth]
+      summary: Remove current user's Bedrock token
+      responses:
+        '200': { description: Token removed }
+
+  # ============================================================
+  # CHAT
+  # ============================================================
+  /api/chat/message:
+    post:
+      tags: [Chat]
+      summary: Send a chat message (RAG-powered)
+      description: Sends a message to the AI assistant. Uses vector search + graph context for RAG responses.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string }
+                conversationId: { type: string }
+                mode: { type: string, enum: [rag, graph, hybrid], default: rag }
+                workspace_id: { type: string }
+                tenant_id: { type: string }
+      responses:
+        '200':
+          description: AI response with sources
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response: { type: string }
+                  conversationId: { type: string }
+                  sources: { type: array, items: { type: object } }
+
+  /api/chat/conversations:
+    get:
+      tags: [Chat]
+      summary: List all conversations
+      responses:
+        '200':
+          description: Array of conversation summaries
+    delete:
+      tags: [Chat]
+      summary: Clear all conversations
+      responses:
+        '200': { description: All conversations deleted }
+
+  /api/chat/conversation/{id}:
+    get:
+      tags: [Chat]
+      summary: Get a conversation by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Conversation with messages }
+        '404': { description: Conversation not found }
+    delete:
+      tags: [Chat]
+      summary: Delete a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Conversation deleted }
+
+  /api/chat/search:
+    post:
+      tags: [Chat]
+      summary: Semantic search across documents
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query: { type: string }
+                limit: { type: integer }
+                workspace_id: { type: string }
+      responses:
+        '200': { description: Search results }
+
+  /api/chat/stats:
+    get:
+      tags: [Chat]
+      summary: Get chat statistics
+      responses:
+        '200': { description: Chat usage statistics }
+
+  /api/chat/documents:
+    get:
+      tags: [Chat]
+      summary: Get indexed documents
+      responses:
+        '200': { description: List of documents }
+
+  /api/chat/document/{id}:
+    delete:
+      tags: [Chat]
+      summary: Delete a document
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Document deleted }
+
+  # ============================================================
+  # GRAPH
+  # ============================================================
+  /api/graph/data:
+    get:
+      tags: [Graph]
+      summary: Get graph data for visualization
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100 }
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200': { description: Nodes and edges for visualization }
+
+  /api/graph/stats:
+    get:
+      tags: [Graph]
+      summary: Get comprehensive graph statistics
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200': { description: Graph statistics }
+
+  /api/graph/connection:
+    get:
+      tags: [Graph]
+      summary: Check Neo4j connection status
+      responses:
+        '200': { description: Connection status }
+
+  /api/graph/redis-status:
+    get:
+      tags: [Graph]
+      summary: Check Redis connection status
+      responses:
+        '200': { description: Redis status }
+
+  /api/graph/schema:
+    get:
+      tags: [Graph]
+      summary: Get graph schema (labels, relationship types)
+      responses:
+        '200': { description: Schema information }
+
+  /api/graph/nl-to-cypher:
+    post:
+      tags: [Graph]
+      summary: Natural language to Cypher query
+      description: Converts a natural language question to a Cypher query and executes it against Neo4j.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question: { type: string }
+                workspace_id: { type: string }
+      responses:
+        '200':
+          description: Query results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cypher: { type: string }
+                  results: { type: array, items: { type: object } }
+
+  /api/graph/cypher:
+    post:
+      tags: [Graph]
+      summary: Execute raw Cypher query
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: { type: string }
+                params: { type: object }
+      responses:
+        '200': { description: Query results }
+
+  /api/graph/clear:
+    delete:
+      tags: [Graph]
+      summary: Clear graph data
+      responses:
+        '200': { description: Data cleared }
+
+  /api/graph/cleanup:
+    post:
+      tags: [Graph]
+      summary: Cleanup orphan nodes
+      responses:
+        '200': { description: Cleanup results }
+
+  /api/graph/repair-relationships:
+    post:
+      tags: [Graph]
+      summary: Repair broken relationships
+      responses:
+        '200': { description: Repair results }
+
+  # ============================================================
+  # SPARQL
+  # ============================================================
+  /api/sparql/query:
+    post:
+      tags: [SPARQL]
+      summary: Execute SPARQL SELECT query
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: { type: string }
+                tenantId: { type: string }
+                workspaceId: { type: string }
+      responses:
+        '200': { description: SPARQL results }
+
+  /api/sparql/query-versioned:
+    post:
+      tags: [SPARQL]
+      summary: Execute SPARQL query with ontology version awareness
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: { type: string }
+                tenantId: { type: string, default: default }
+                workspaceId: { type: string, default: default }
+      responses:
+        '200': { description: Versioned SPARQL results }
+
+  /api/sparql/pattern:
+    post:
+      tags: [SPARQL]
+      summary: Pattern matching query
+      responses:
+        '200': { description: Pattern results }
+
+  /api/sparql/reason:
+    post:
+      tags: [SPARQL]
+      summary: Trigger reasoning
+      responses:
+        '200': { description: Reasoning results }
+
+  /api/sparql/classes:
+    get:
+      tags: [SPARQL]
+      summary: Get OWL classes
+      responses:
+        '200': { description: List of classes }
+
+  /api/sparql/properties:
+    get:
+      tags: [SPARQL]
+      summary: Get OWL properties
+      responses:
+        '200': { description: List of properties }
+
+  /api/sparql/history:
+    get:
+      tags: [SPARQL]
+      summary: Get query history
+      responses:
+        '200': { description: Query history }
+    delete:
+      tags: [SPARQL]
+      summary: Clear query history
+      responses:
+        '200': { description: History cleared }
+
+  # ============================================================
+  # ENTITIES
+  # ============================================================
+  /api/entities:
+    get:
+      tags: [Entities]
+      summary: List entities with cursor-based pagination
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema: { type: string }
+        - name: workspaceId
+          in: query
+          required: true
+          schema: { type: string }
+        - name: class
+          in: query
+          schema: { type: string }
+        - name: search
+          in: query
+          schema: { type: string }
+        - $ref: '#/components/parameters/Limit'
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Paginated entity list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Entity' } }
+                  nextCursor: { type: string, nullable: true }
+                  totalEstimate: { type: integer }
+
+  /api/entities/classes:
+    get:
+      tags: [Entities]
+      summary: Get available entity classes in a workspace
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema: { type: string }
+        - name: workspaceId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: List of entity classes }
+
+  /api/entities/{entityId}:
+    get:
+      tags: [Entities]
+      summary: Get entity detail
+      parameters:
+        - name: entityId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Entity details }
+        '404': { description: Entity not found }
+    patch:
+      tags: [Entities]
+      summary: Update entity properties
+      parameters:
+        - name: entityId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200': { description: Entity updated }
+
+  /api/entities/{entityId}/relationships:
+    get:
+      tags: [Entities]
+      summary: Get entity relationships
+      parameters:
+        - name: entityId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Entity relationships }
+
+  /api/entities/{entityId}/graph:
+    get:
+      tags: [Entities]
+      summary: Get entity neighborhood graph
+      parameters:
+        - name: entityId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Graph data for visualization }
+
+  # ============================================================
+  # ONTOLOGY (main routes)
+  # ============================================================
+  /api/ontology/stats:
+    get:
+      tags: [Ontology]
+      summary: Get graph statistics
+      responses:
+        '200': { description: Graph statistics }
+
+  /api/ontology/all:
+    get:
+      tags: [Ontology]
+      summary: Get all ontologies (predefined + custom)
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Flat array of ontologies
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  ontologies: { type: array, items: { $ref: '#/components/schemas/Ontology' } }
+
+  /api/ontology/{id}:
+    get:
+      tags: [Ontology]
+      summary: Get a specific ontology by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Ontology details }
+        '404': { description: Ontology not found }
+
+  /api/ontology/templates:
+    get:
+      tags: [Ontology]
+      summary: Get available ontology templates
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200': { description: Templates and custom ontologies }
+
+  /api/ontology/templates/{id}:
+    get:
+      tags: [Ontology]
+      summary: Get a specific template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Template details }
+        '404': { description: Template not found }
+
+  /api/ontology/analyze:
+    post:
+      tags: [Ontology]
+      summary: Analyze document and suggest schema
+      description: Phase 1 of two-phase upload. Analyzes document content and suggests entity types and relationships.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+                industry: { type: string, default: general }
+                analysisMode: { type: string, enum: [auto, full, sampled] }
+      responses:
+        '200': { description: Schema analysis results }
+
+  /api/ontology/entities/types:
+    get:
+      tags: [Ontology]
+      summary: Get available entity types
+      responses:
+        '200': { description: List of entity type labels }
+
+  /api/ontology/entities/{id}:
+    put:
+      tags: [Ontology]
+      summary: Update an entity/concept
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label: { type: string }
+                type: { type: string }
+                description: { type: string }
+                confidence: { type: number }
+      responses:
+        '200': { description: Entity updated }
+    delete:
+      tags: [Ontology]
+      summary: Delete an entity/concept
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Entity deleted }
+
+  /api/ontology/relationships:
+    post:
+      tags: [Ontology]
+      summary: Add a relationship between entities
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourceId, targetId, predicate]
+              properties:
+                sourceId: { type: string }
+                targetId: { type: string }
+                predicate: { type: string }
+      responses:
+        '200': { description: Relationship created }
+    put:
+      tags: [Ontology]
+      summary: Update a relationship predicate
+      responses:
+        '200': { description: Relationship updated }
+    delete:
+      tags: [Ontology]
+      summary: Delete a relationship
+      responses:
+        '200': { description: Relationship deleted }
+
+  /api/ontology/relationships/predicates:
+    get:
+      tags: [Ontology]
+      summary: Get all unique relationship predicates
+      responses:
+        '200': { description: List of predicates }
+
+  /api/ontology/chunks/{id}:
+    get:
+      tags: [Ontology]
+      summary: Get a specific chunk
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Chunk details with concepts }
+    put:
+      tags: [Ontology]
+      summary: Update a chunk's text
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Chunk updated }
+    delete:
+      tags: [Ontology]
+      summary: Delete a chunk
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Chunk deleted }
+
+  /api/ontology/upload:
+    post:
+      tags: [Documents]
+      summary: Upload and process a document (stages for review)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+                ontologyId: { type: string }
+                chunkingMethod: { type: string, enum: [semantic, fixed, page] }
+                chunkSize: { type: integer, default: 1000 }
+                schemaMode: { type: string, enum: [constrained, open] }
+      responses:
+        '200': { description: Document staged for review }
+
+  /api/ontology/upload-async:
+    post:
+      tags: [Documents]
+      summary: Upload and process a document asynchronously
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+                ontologyId: { type: string }
+                chunkingMethod: { type: string }
+      responses:
+        '200':
+          description: Job queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pipelineId: { type: string }
+                  jobId: { type: string }
+                  status: { type: string }
+
+  /api/ontology/documents:
+    get:
+      tags: [Documents]
+      summary: List documents
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200': { description: Document list }
+
+  /api/ontology/documents/staged:
+    get:
+      tags: [Documents]
+      summary: List staged documents
+      responses:
+        '200': { description: Staged document list }
+
+  /api/ontology/documents/{id}:
+    get:
+      tags: [Documents]
+      summary: Get a document by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Document details }
+
+  /api/ontology/jobs:
+    get:
+      tags: [Ontology]
+      summary: List background jobs
+      responses:
+        '200': { description: Job list }
+    post:
+      tags: [Ontology]
+      summary: Upload file and create a job
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+                industry: { type: string }
+                workspace_id: { type: string }
+      responses:
+        '200': { description: Job created }
+
+  /api/ontology/jobs/{id}:
+    get:
+      tags: [Ontology]
+      summary: Get job status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Job details }
+
+  /api/ontology/jobs/{id}/generate:
+    post:
+      tags: [Ontology]
+      summary: Generate ontology from uploaded file
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Generation started }
+
+  /api/ontology/extraction-review/stage:
+    post:
+      tags: [Documents]
+      summary: Stage extraction results for review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [jobId]
+              properties:
+                jobId: { type: string }
+      responses:
+        '200': { description: Extraction staged }
+
+  /api/ontology/extraction-review/{stageId}:
+    get:
+      tags: [Documents]
+      summary: Get staged extraction for review
+      parameters:
+        - name: stageId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Staged extraction data }
+    put:
+      tags: [Documents]
+      summary: Update staged extraction
+      parameters:
+        - name: stageId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Extraction updated }
+    delete:
+      tags: [Documents]
+      summary: Discard staged extraction
+      parameters:
+        - name: stageId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Extraction discarded }
+
+  /api/ontology/extraction-review/{stageId}/commit:
+    post:
+      tags: [Documents]
+      summary: Commit extraction to knowledge graph
+      parameters:
+        - name: stageId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Extraction committed }
+
+  /api/ontology/sheet-data/{docId}:
+    get:
+      tags: [Documents]
+      summary: Get spreadsheet-style entity data for a document
+      parameters:
+        - name: docId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: type
+          in: query
+          schema: { type: string }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200': { description: Tabular entity data }
+
+  /api/ontology/sheet-data/{docId}/cell:
+    put:
+      tags: [Documents]
+      summary: Update a cell value
+      parameters:
+        - name: docId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Cell updated }
+
+  /api/ontology/cleanup/orphans:
+    post:
+      tags: [Ontology]
+      summary: Cleanup orphan documents (manager+)
+      responses:
+        '200': { description: Cleanup results }
+
+  /api/ontology/cleanup/jobs:
+    post:
+      tags: [Ontology]
+      summary: Cleanup old jobs (manager+)
+      responses:
+        '200': { description: Cleanup results }
+
+  # ============================================================
+  # OWL
+  # ============================================================
+  /api/owl/import:
+    post:
+      tags: [OWL]
+      summary: Import OWL ontology from Turtle file or JSON body
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [tenantId, workspaceId]
+              properties:
+                file: { type: string, format: binary }
+                tenantId: { type: string }
+                workspaceId: { type: string }
+                turtleContent: { type: string }
+                scope: { type: string, enum: [global, tenant, workspace] }
+      responses:
+        '200': { description: Ontology imported }
+
+  /api/owl/create:
+    post:
+      tags: [OWL]
+      summary: Create a new ontology
+      responses:
+        '200': { description: Ontology created }
+
+  /api/owl/list:
+    get:
+      tags: [OWL]
+      summary: List all ontologies
+      responses:
+        '200': { description: Ontology list }
+
+  /api/owl/structure/{ontologyId}:
+    get:
+      tags: [OWL]
+      summary: Get ontology structure (classes, properties, relationships)
+      parameters:
+        - name: ontologyId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Ontology structure }
+
+  /api/owl/export:
+    get:
+      tags: [OWL]
+      summary: Export ontology as Turtle
+      parameters:
+        - name: ontologyId
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Turtle content }
+
+  /api/owl/{ontologyId}:
+    put:
+      tags: [OWL]
+      summary: Update an ontology
+      parameters:
+        - name: ontologyId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Ontology updated }
+
+  /api/owl/{iri}:
+    get:
+      tags: [OWL]
+      summary: Get ontology by IRI
+      parameters:
+        - name: iri
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Ontology data }
+    delete:
+      tags: [OWL]
+      summary: Delete an ontology
+      parameters:
+        - name: iri
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Ontology deleted }
+
+  /api/owl/sync-to-neo4j:
+    post:
+      tags: [OWL]
+      summary: Sync ontology to Neo4j
+      responses:
+        '200': { description: Sync completed }
+
+  # ============================================================
+  # ONTOLOGY VERSIONS
+  # ============================================================
+  /api/ontology-versions/{ontologyId}/versions:
+    get:
+      tags: [Ontology Versions]
+      summary: Get version history for an ontology
+      parameters:
+        - name: ontologyId
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: '#/components/parameters/Limit'
+        - name: branch
+          in: query
+          schema: { type: string }
+      responses:
+        '200': { description: Version history }
+    post:
+      tags: [Ontology Versions]
+      summary: Create a new version (manager+)
+      parameters:
+        - name: ontologyId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description: { type: string }
+                branch: { type: string, default: main }
+                tag: { type: string }
+      responses:
+        '200': { description: Version created }
+
+  /api/ontology-versions/{ontologyId}/rollback:
+    post:
+      tags: [Ontology Versions]
+      summary: Rollback ontology to a previous version
+      parameters:
+        - name: ontologyId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version_id]
+              properties:
+                version_id: { type: string }
+      responses:
+        '200': { description: Rollback completed }
+
+  /api/ontology-versions/{ontologyId}/branches:
+    get:
+      tags: [Ontology Versions]
+      summary: List branches
+      parameters:
+        - name: ontologyId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Branch list }
+    post:
+      tags: [Ontology Versions]
+      summary: Create a branch
+      parameters:
+        - name: ontologyId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Branch created }
+
+  /api/ontology-versions/{ontologyId}/tags:
+    get:
+      tags: [Ontology Versions]
+      summary: List tags
+      parameters:
+        - name: ontologyId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Tag list }
+    post:
+      tags: [Ontology Versions]
+      summary: Create a tag
+      parameters:
+        - name: ontologyId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Tag created }
+
+  # ============================================================
+  # ONTOLOGY PACKS
+  # ============================================================
+  /api/ontology-packs:
+    get:
+      tags: [Ontology Packs]
+      summary: List all ontology packs (global, tenant, workspace)
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/WorkspaceId'
+        - name: flat
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200': { description: Ontology packs }
+    post:
+      tags: [Ontology Packs]
+      summary: Create an ontology pack
+      responses:
+        '200': { description: Pack created }
+
+  /api/ontology-packs/{packId}:
+    get:
+      tags: [Ontology Packs]
+      summary: Get a specific pack
+      parameters:
+        - name: packId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Pack details }
+
+  /api/ontology-packs/{packId}/fork-to-workspace:
+    post:
+      tags: [Ontology Packs]
+      summary: Fork a pack to workspace
+      parameters:
+        - name: packId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Pack forked }
+
+  # ============================================================
+  # EXTRACTION
+  # ============================================================
+  /api/extraction/enhanced:
+    post:
+      tags: [Extraction]
+      summary: Enhanced extraction with multiple approaches (NER + LLM + Patterns)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [tenantId, workspaceId]
+              properties:
+                file: { type: string, format: binary }
+                ontologyId: { type: string }
+                tenantId: { type: string }
+                workspaceId: { type: string }
+                approaches: { type: string, default: "ner,llm,patterns" }
+      responses:
+        '200': { description: Extraction results }
+
+  /api/extraction/text:
+    post:
+      tags: [Extraction]
+      summary: Extract from text content
+      responses:
+        '200': { description: Extraction results }
+
+  /api/extraction/supported-types:
+    get:
+      tags: [Extraction]
+      summary: Get supported file types
+      responses:
+        '200': { description: Supported types }
+
+  /api/extraction/documents:
+    post:
+      tags: [Extraction]
+      summary: Upload document for extraction
+      responses:
+        '200': { description: Document uploaded }
+
+  /api/extraction/documents/{docId}/process:
+    post:
+      tags: [Extraction]
+      summary: Process a document
+      parameters:
+        - name: docId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Processing started }
+
+  /api/extraction/documents/{docId}/status:
+    get:
+      tags: [Extraction]
+      summary: Get extraction status
+      parameters:
+        - name: docId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Extraction status }
+
+  /api/extraction/stats:
+    get:
+      tags: [Extraction]
+      summary: Get extraction statistics
+      responses:
+        '200': { description: Statistics }
+
+  # ============================================================
+  # FOLDERS
+  # ============================================================
+  /api/folders:
+    get:
+      tags: [Folders]
+      summary: List folders (workspace-scoped)
+      responses:
+        '200': { description: Folder list }
+    post:
+      tags: [Folders]
+      summary: Create a folder (manager+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                parent_folder_id: { type: string }
+                folder_type: { type: string }
+      responses:
+        '200': { description: Folder created }
+
+  /api/folders/tree:
+    get:
+      tags: [Folders]
+      summary: Get folder tree structure
+      responses:
+        '200': { description: Folder tree }
+
+  /api/folders/{id}:
+    get:
+      tags: [Folders]
+      summary: Get a folder with documents
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Folder details }
+    put:
+      tags: [Folders]
+      summary: Update a folder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Folder updated }
+    delete:
+      tags: [Folders]
+      summary: Delete a folder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Folder deleted }
+
+  /api/folders/{id}/ontology:
+    get:
+      tags: [Folders]
+      summary: Get folder's linked ontology
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Linked ontology }
+    post:
+      tags: [Folders]
+      summary: Link ontology to folder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Ontology linked }
+
+  # ============================================================
+  # TENANTS
+  # ============================================================
+  /api/tenants:
+    get:
+      tags: [Tenants]
+      summary: List all tenants
+      responses:
+        '200':
+          description: Tenant list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  tenants: { type: array, items: { $ref: '#/components/schemas/Tenant' } }
+    post:
+      tags: [Tenants]
+      summary: Create a tenant (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                tenant_id: { type: string }
+      responses:
+        '200': { description: Tenant created }
+
+  /api/tenants/{id}:
+    get:
+      tags: [Tenants]
+      summary: Get a tenant with workspaces
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Tenant details }
+    put:
+      tags: [Tenants]
+      summary: Update a tenant (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Tenant updated }
+    delete:
+      tags: [Tenants]
+      summary: Delete a tenant (admin only)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Tenant deleted }
+
+  /api/tenants/{tenantId}/workspaces:
+    get:
+      tags: [Tenants]
+      summary: List workspaces for a tenant
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Workspace list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  workspaces: { type: array, items: { $ref: '#/components/schemas/Workspace' } }
+    post:
+      tags: [Tenants]
+      summary: Create a workspace (admin only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                workspace_id: { type: string }
+      responses:
+        '200': { description: Workspace created }
+
+  /api/tenants/{tenantId}/workspaces/{workspaceId}:
+    get:
+      tags: [Tenants]
+      summary: Get a workspace
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: workspaceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Workspace details }
+    put:
+      tags: [Tenants]
+      summary: Update a workspace
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: workspaceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Workspace updated }
+    delete:
+      tags: [Tenants]
+      summary: Delete a workspace
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string }
+        - name: workspaceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Workspace deleted }
+
+  # ============================================================
+  # ADMIN
+  # ============================================================
+  /api/admin/graphdb/stats:
+    get:
+      tags: [Admin]
+      summary: Get GraphDB statistics
+      responses:
+        '200': { description: GraphDB stats including triple counts and graph list }
+
+  /api/admin/graphdb/browse:
+    get:
+      tags: [Admin]
+      summary: Browse GraphDB contents
+      parameters:
+        - name: type
+          in: query
+          schema: { type: string, enum: [all, ontologies, entities] }
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: GraphDB contents }
+
+  /api/admin/graphdb/delete:
+    post:
+      tags: [Admin]
+      summary: Delete from GraphDB
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type: { type: string, enum: [data, ontology, audit, all] }
+      responses:
+        '200': { description: Deletion results }
+
+  /api/admin/graphdb/cleanup:
+    post:
+      tags: [Admin]
+      summary: Cleanup GraphDB
+      responses:
+        '200': { description: Cleanup results }
+
+  /api/admin/redis/stats:
+    get:
+      tags: [Admin]
+      summary: Get Redis statistics
+      responses:
+        '200': { description: Redis stats }
+
+  /api/admin/redis/cleanup:
+    post:
+      tags: [Admin]
+      summary: Cleanup Redis data
+      description: |
+        Clears user-generated content only. Protected prefixes (auth, users, tenants, workspaces, settings, audit) are preserved.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type: { type: string, enum: [vectors, chunks, conversations, all] }
+      responses:
+        '200': { description: Cleanup results }
+
+  /api/admin/neo4j/stats:
+    get:
+      tags: [Admin]
+      summary: Get Neo4j statistics
+      responses:
+        '200': { description: Neo4j stats }
+
+  /api/admin/neo4j/browse:
+    get:
+      tags: [Admin]
+      summary: Browse Neo4j contents
+      responses:
+        '200': { description: Neo4j contents }
+
+  /api/admin/neo4j/delete:
+    post:
+      tags: [Admin]
+      summary: Delete from Neo4j
+      responses:
+        '200': { description: Deletion results }
+
+  /api/admin/neo4j/query:
+    post:
+      tags: [Admin]
+      summary: Execute Neo4j query (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query]
+              properties:
+                query: { type: string }
+      responses:
+        '200': { description: Query results }
+
+  /api/admin/neo4j/cleanup:
+    post:
+      tags: [Admin]
+      summary: Cleanup Neo4j
+      responses:
+        '200': { description: Cleanup results }
+
+  /api/admin/llm/status:
+    get:
+      tags: [Admin]
+      summary: Get LLM service status
+      responses:
+        '200': { description: LLM status }
+
+  /api/admin/llm/token:
+    post:
+      tags: [Admin]
+      summary: Set server-level Bedrock token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        '200': { description: Token set }
+    delete:
+      tags: [Admin]
+      summary: Remove server-level Bedrock token
+      responses:
+        '200': { description: Token removed }
+
+  /api/admin/workspace/{workspaceId}/purge:
+    delete:
+      tags: [Admin]
+      summary: Purge all data for a workspace (cannot purge default)
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Workspace purged }
+        '403': { description: Cannot purge default workspace }
+
+  /api/admin/tenant/{tenantId}/purge:
+    delete:
+      tags: [Admin]
+      summary: Purge all data for a tenant (cannot purge default)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Tenant purged }
+        '403': { description: Cannot purge default tenant }
+
+  # ============================================================
+  # ENTERPRISE
+  # ============================================================
+  /api/enterprise/entity-resolution/candidates:
+    get:
+      tags: [Enterprise]
+      summary: Find duplicate entity candidates
+      parameters:
+        - name: entityType
+          in: query
+          schema: { type: string }
+        - name: minScore
+          in: query
+          schema: { type: number }
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200': { description: Duplicate candidates }
+
+  /api/enterprise/entity-resolution/merge:
+    post:
+      tags: [Enterprise]
+      summary: Merge two entities
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourceUri, targetUri]
+              properties:
+                sourceUri: { type: string }
+                targetUri: { type: string }
+                mergeStrategy: { type: string }
+      responses:
+        '200': { description: Merge result }
+
+  /api/enterprise/entity-resolution/auto-resolve:
+    post:
+      tags: [Enterprise]
+      summary: Auto-resolve duplicates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                minScore: { type: number, default: 0.85 }
+                maxMerges: { type: integer, default: 50 }
+                dryRun: { type: boolean, default: true }
+      responses:
+        '200': { description: Auto-resolve results }
+
+  /api/enterprise/connectors:
+    get:
+      tags: [Enterprise]
+      summary: List data connectors
+      responses:
+        '200': { description: Connector list }
+    post:
+      tags: [Enterprise]
+      summary: Register a data connector
+      responses:
+        '200': { description: Connector registered }
+
+  /api/enterprise/connectors/{id}:
+    get:
+      tags: [Enterprise]
+      summary: Get connector details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Connector details }
+    delete:
+      tags: [Enterprise]
+      summary: Delete a connector
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Connector deleted }
+
+  /api/enterprise/lineage/{entityUri}:
+    get:
+      tags: [Enterprise]
+      summary: Get entity lineage
+      parameters:
+        - name: entityUri
+          in: path
+          required: true
+          schema: { type: string }
+        - name: depth
+          in: query
+          schema: { type: integer, default: 3 }
+      responses:
+        '200': { description: Lineage data }
+
+  /api/enterprise/rbac/roles:
+    get:
+      tags: [Enterprise]
+      summary: Get all roles with permissions
+      responses:
+        '200':
+          description: Role list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+                    permissions: { type: array, items: { type: string } }
+
+  /api/enterprise/rbac/audit:
+    get:
+      tags: [Enterprise]
+      summary: Get activity audit log
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Audit log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AuditEntry' }
+
+  /api/enterprise/graph-algorithms/pagerank:
+    post:
+      tags: [Enterprise]
+      summary: Calculate PageRank
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                iterations: { type: integer }
+                dampingFactor: { type: number }
+                entityTypes: { type: array, items: { type: string } }
+                limit: { type: integer }
+      responses:
+        '200': { description: PageRank results }
+
+  /api/enterprise/graph-algorithms/communities:
+    post:
+      tags: [Enterprise]
+      summary: Detect communities
+      responses:
+        '200': { description: Community detection results }
+
+  /api/enterprise/graph-algorithms/shortest-path:
+    post:
+      tags: [Enterprise]
+      summary: Find shortest path between entities
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourceUri, targetUri]
+              properties:
+                sourceUri: { type: string }
+                targetUri: { type: string }
+                maxDepth: { type: integer }
+      responses:
+        '200': { description: Shortest path }
+
+  /api/enterprise/graph-algorithms/statistics:
+    get:
+      tags: [Enterprise]
+      summary: Get graph algorithm statistics
+      responses:
+        '200': { description: Graph statistics }
+
+  # ============================================================
+  # REVIEW QUEUE
+  # ============================================================
+  /api/review-queue:
+    get:
+      tags: [Review Queue]
+      summary: Get review queue items
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - name: type
+          in: query
+          schema: { type: string, enum: [LOW_CONFIDENCE, CANDIDATE, QUARANTINED] }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        '200': { description: Queue items }
+    post:
+      tags: [Review Queue]
+      summary: Add item to review queue
+      responses:
+        '200': { description: Item added }
+
+  /api/review-queue/stats:
+    get:
+      tags: [Review Queue]
+      summary: Get queue statistics
+      responses:
+        '200': { description: Queue stats }
+
+  /api/review-queue/{id}:
+    get:
+      tags: [Review Queue]
+      summary: Get a review item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Review item }
+    delete:
+      tags: [Review Queue]
+      summary: Delete a review item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Item deleted }
+
+  /api/review-queue/{id}/approve:
+    post:
+      tags: [Review Queue]
+      summary: Approve a review item (member+)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Item approved }
+
+  /api/review-queue/{id}/reject:
+    post:
+      tags: [Review Queue]
+      summary: Reject a review item (member+)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        '200': { description: Item rejected }
+
+  /api/review-queue/bulk:
+    post:
+      tags: [Review Queue]
+      summary: Bulk approve/reject items
+      responses:
+        '200': { description: Bulk action results }
+
+  # ============================================================
+  # VERSIONING
+  # ============================================================
+  /api/versioning/documents/{docId}/versions:
+    get:
+      tags: [Versioning]
+      summary: Get extraction versions for a document
+      parameters:
+        - name: docId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Version list }
+
+  /api/versioning/documents/{docId}/current:
+    get:
+      tags: [Versioning]
+      summary: Get current extraction snapshot
+      parameters:
+        - name: docId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Current snapshot }
+
+  /api/versioning/documents/{docId}/rollback:
+    post:
+      tags: [Versioning]
+      summary: Rollback to a previous extraction version (manager+)
+      parameters:
+        - name: docId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version_id]
+              properties:
+                version_id: { type: string }
+                reason: { type: string }
+      responses:
+        '200': { description: Rollback completed }
+
+  /api/versioning/audit:
+    get:
+      tags: [Versioning]
+      summary: Get extraction audit log
+      responses:
+        '200': { description: Audit entries }
+
+  /api/versioning/stats:
+    get:
+      tags: [Versioning]
+      summary: Get versioning statistics
+      responses:
+        '200': { description: Statistics }
+
+  # ============================================================
+  # IDENTITY
+  # ============================================================
+  /api/identity/merge:
+    post:
+      tags: [Identity]
+      summary: Merge two entities (manager+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_entity_id, target_entity_id]
+              properties:
+                source_entity_id: { type: string }
+                target_entity_id: { type: string }
+                reason: { type: string }
+                workspace_id: { type: string }
+      responses:
+        '200': { description: Merge result }
+
+  /api/identity/split:
+    post:
+      tags: [Identity]
+      summary: Split an entity into multiple (manager+)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_entity_id, split_definitions]
+              properties:
+                source_entity_id: { type: string }
+                split_definitions: { type: array, items: { type: object } }
+                reason: { type: string }
+      responses:
+        '200': { description: Split result }
+
+  /api/identity/duplicates:
+    get:
+      tags: [Identity]
+      summary: Find potential duplicate entities
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - name: class
+          in: query
+          schema: { type: string }
+        - name: threshold
+          in: query
+          schema: { type: number, default: 0.8 }
+      responses:
+        '200': { description: Duplicate candidates }
+
+  /api/identity/changes:
+    get:
+      tags: [Identity]
+      summary: Get identity change history
+      responses:
+        '200': { description: Change history }
+
+  # ============================================================
+  # METRICS
+  # ============================================================
+  /api/metrics/health:
+    get:
+      tags: [Metrics]
+      summary: Get health dashboard metrics
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200': { description: Health metrics }
+
+  /api/metrics/timeseries/{metric}:
+    get:
+      tags: [Metrics]
+      summary: Get timeseries data for a metric
+      parameters:
+        - name: metric
+          in: path
+          required: true
+          schema: { type: string }
+        - name: days
+          in: query
+          schema: { type: integer, default: 30 }
+      responses:
+        '200': { description: Timeseries data }
+
+  /api/metrics/coverage:
+    get:
+      tags: [Metrics]
+      summary: Get ontology coverage details
+      responses:
+        '200': { description: Coverage data }
+
+  /api/metrics/export:
+    get:
+      tags: [Metrics]
+      summary: Export all metrics
+      responses:
+        '200': { description: Exported metrics }
+
+  /api/metrics/trust:
+    get:
+      tags: [Metrics]
+      summary: Get trust statistics
+      responses:
+        '200': { description: Trust stats }
+
+  # ============================================================
+  # SETTINGS
+  # ============================================================
+  /api/settings/llm:
+    get:
+      tags: [Settings]
+      summary: Get LLM settings (admin only)
+      responses:
+        '200':
+          description: LLM settings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  settings:
+                    type: object
+                    properties:
+                      llmTimeout: { type: integer }
+                      extractionMode: { type: string }
+                      chunkSize: { type: integer }
+                      maxChars: { type: integer }
+    put:
+      tags: [Settings]
+      summary: Update LLM settings (admin only)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                llmTimeout: { type: integer }
+                extractionMode: { type: string }
+                chunkSize: { type: integer }
+                maxChars: { type: integer }
+      responses:
+        '200': { description: Settings updated }
+
+  # ============================================================
+  # SYNC
+  # ============================================================
+  /api/sync/status:
+    get:
+      tags: [Sync]
+      summary: Get sync status
+      responses:
+        '200': { description: Sync status }
+
+  /api/sync/trigger:
+    post:
+      tags: [Sync]
+      summary: Trigger GraphDB to Neo4j sync (manager+)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tenantId: { type: string }
+                workspaceId: { type: string }
+      responses:
+        '200': { description: Sync triggered }
+
+  /api/sync/reset:
+    post:
+      tags: [Sync]
+      summary: Reset sync status
+      responses:
+        '200': { description: Status reset }
+
+  # ============================================================
+  # JDBC
+  # ============================================================
+  /api/jdbc/test:
+    post:
+      tags: [JDBC]
+      summary: Test database connection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type: { type: string, enum: [postgresql, mysql, mssql] }
+                host: { type: string }
+                port: { type: integer }
+                database: { type: string }
+                username: { type: string }
+                password: { type: string }
+      responses:
+        '200': { description: Connection test result }
+
+  /api/jdbc/connect:
+    post:
+      tags: [JDBC]
+      summary: Establish database connection
+      responses:
+        '200': { description: Connection established }
+
+  /api/jdbc/{connectionId}:
+    delete:
+      tags: [JDBC]
+      summary: Disconnect
+      parameters:
+        - name: connectionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Disconnected }
+
+  /api/jdbc/{connectionId}/analyze:
+    post:
+      tags: [JDBC]
+      summary: Analyze database schema
+      parameters:
+        - name: connectionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Schema analysis }
+
+  /api/jdbc/{connectionId}/import:
+    post:
+      tags: [JDBC]
+      summary: Import data from external database
+      parameters:
+        - name: connectionId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Import results }

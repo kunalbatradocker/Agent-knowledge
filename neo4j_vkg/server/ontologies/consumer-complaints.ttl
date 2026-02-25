@@ -1,0 +1,140 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix cc: <http://purplefabric.ai/ontology/consumer-complaints#> .
+
+<http://purplefabric.ai/ontology/consumer-complaints> a owl:Ontology ;
+    rdfs:label "Consumer Complaints Ontology" ;
+    rdfs:comment "Ontology for consumer complaint data analysis" .
+
+# Classes
+cc:Complaint a owl:Class ;
+    rdfs:label "Complaint" ;
+    rdfs:comment "A consumer complaint record" .
+
+cc:Company a owl:Class ;
+    rdfs:label "Company" ;
+    rdfs:comment "Company that received the complaint" .
+
+cc:Product a owl:Class ;
+    rdfs:label "Product" ;
+    rdfs:comment "Financial product or service" .
+
+cc:Issue a owl:Class ;
+    rdfs:label "Issue" ;
+    rdfs:comment "Type of issue reported" .
+
+cc:State a owl:Class ;
+    rdfs:label "State" ;
+    rdfs:comment "US State where complaint originated" .
+
+# Object Properties (Relationships)
+cc:againstCompany a owl:ObjectProperty ;
+    rdfs:label "againstCompany" ;
+    rdfs:domain cc:Complaint ;
+    rdfs:range cc:Company ;
+    rdfs:comment "Company the complaint is against" .
+
+cc:aboutProduct a owl:ObjectProperty ;
+    rdfs:label "aboutProduct" ;
+    rdfs:domain cc:Complaint ;
+    rdfs:range cc:Product ;
+    rdfs:comment "Product the complaint is about" .
+
+cc:hasIssue a owl:ObjectProperty ;
+    rdfs:label "hasIssue" ;
+    rdfs:domain cc:Complaint ;
+    rdfs:range cc:Issue ;
+    rdfs:comment "Issue type of the complaint" .
+
+cc:inState a owl:ObjectProperty ;
+    rdfs:label "inState" ;
+    rdfs:domain cc:Complaint ;
+    rdfs:range cc:State ;
+    rdfs:comment "State where complaint originated" .
+
+# Data Properties
+cc:complaintId a owl:DatatypeProperty ;
+    rdfs:label "complaintId" ;
+    rdfs:domain cc:Complaint ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Unique complaint identifier" .
+
+cc:dateReceived a owl:DatatypeProperty ;
+    rdfs:label "dateReceived" ;
+    rdfs:domain cc:Complaint ;
+    rdfs:range xsd:date ;
+    rdfs:comment "Date complaint was received" .
+
+cc:dateSentToCompany a owl:DatatypeProperty ;
+    rdfs:label "dateSentToCompany" ;
+    rdfs:domain cc:Complaint ;
+    rdfs:range xsd:date ;
+    rdfs:comment "Date complaint was sent to company" .
+
+cc:subProduct a owl:DatatypeProperty ;
+    rdfs:label "subProduct" ;
+    rdfs:domain cc:Complaint ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Sub-product category" .
+
+cc:subIssue a owl:DatatypeProperty ;
+    rdfs:label "subIssue" ;
+    rdfs:domain cc:Complaint ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Sub-issue category" .
+
+cc:narrative a owl:DatatypeProperty ;
+    rdfs:label "narrative" ;
+    rdfs:domain cc:Complaint ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Consumer complaint narrative" .
+
+cc:companyResponse a owl:DatatypeProperty ;
+    rdfs:label "companyResponse" ;
+    rdfs:domain cc:Complaint ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Company response to consumer" .
+
+cc:companyPublicResponse a owl:DatatypeProperty ;
+    rdfs:label "companyPublicResponse" ;
+    rdfs:domain cc:Complaint ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Company public response" .
+
+cc:timelyResponse a owl:DatatypeProperty ;
+    rdfs:label "timelyResponse" ;
+    rdfs:domain cc:Complaint ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Whether response was timely" .
+
+cc:consumerDisputed a owl:DatatypeProperty ;
+    rdfs:label "consumerDisputed" ;
+    rdfs:domain cc:Complaint ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Whether consumer disputed" .
+
+cc:submittedVia a owl:DatatypeProperty ;
+    rdfs:label "submittedVia" ;
+    rdfs:domain cc:Complaint ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Submission channel" .
+
+cc:zipCode a owl:DatatypeProperty ;
+    rdfs:label "zipCode" ;
+    rdfs:domain cc:Complaint ;
+    rdfs:range xsd:string ;
+    rdfs:comment "ZIP code" .
+
+cc:tags a owl:DatatypeProperty ;
+    rdfs:label "tags" ;
+    rdfs:domain cc:Complaint ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Tags" .
+
+cc:consentProvided a owl:DatatypeProperty ;
+    rdfs:label "consentProvided" ;
+    rdfs:domain cc:Complaint ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Consumer consent provided" .

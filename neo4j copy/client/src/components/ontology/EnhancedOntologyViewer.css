@@ -1,0 +1,816 @@
+/* Enhanced Ontology Viewer Styles */
+
+.enhanced-ontology-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+/* Header */
+.eov-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.eov-title-section {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.eov-icon {
+  width: 48px;
+  height: 48px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.eov-title-content h2 {
+  margin: 0 0 8px 0;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.eov-title-content p {
+  margin: 0;
+  opacity: 0.9;
+  font-size: 14px;
+  max-width: 400px;
+}
+
+.eov-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.eov-btn {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.eov-btn-primary {
+  background: #fff;
+  color: #667eea;
+}
+
+.eov-btn-primary:hover {
+  background: #f8f9ff;
+  transform: translateY(-1px);
+}
+
+.eov-btn-secondary {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.eov-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+/* Tabs */
+.eov-tabs {
+  display: flex;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+  padding: 0 24px;
+}
+
+.eov-tab {
+  padding: 16px 20px;
+  background: none;
+  border: none;
+  font-size: 14px;
+  font-weight: 500;
+  color: #6c757d;
+  cursor: pointer;
+  border-bottom: 3px solid transparent;
+  transition: all 0.2s;
+}
+
+.eov-tab:hover {
+  color: #495057;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.eov-tab.active {
+  color: #667eea;
+  border-bottom-color: #667eea;
+  background: #fff;
+}
+
+/* Content */
+.eov-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+/* Overview */
+.eov-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.eov-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.eov-stat-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+  transition: all 0.2s;
+}
+
+.eov-stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.eov-stat-icon {
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.eov-stat-number {
+  font-size: 28px;
+  font-weight: 700;
+  color: #212529;
+  margin-bottom: 4px;
+}
+
+.eov-stat-label {
+  font-size: 14px;
+  color: #6c757d;
+  font-weight: 500;
+}
+
+.eov-description-card {
+  background: #fff;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 24px;
+}
+
+.eov-description-card h4 {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #212529;
+}
+
+.eov-description-card p {
+  margin: 0 0 20px 0;
+  color: #495057;
+  line-height: 1.6;
+}
+
+.eov-metadata {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.eov-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.eov-meta-label {
+  font-weight: 600;
+  color: #495057;
+  min-width: 80px;
+}
+
+.eov-meta-value {
+  color: #6c757d;
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 13px;
+  background: #f8f9fa;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+/* Search */
+.eov-search-bar {
+  margin-bottom: 20px;
+}
+
+.eov-search-input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  font-size: 14px;
+  background: #f8f9fa;
+  transition: all 0.2s;
+}
+
+.eov-search-input:focus {
+  outline: none;
+  border-color: #667eea;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* Classes */
+.eov-classes {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.eov-classes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
+.eov-class-card {
+  background: #fff;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+.eov-class-card:hover {
+  border-color: #667eea;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.eov-class-card.expanded {
+  border-color: #667eea;
+  background: #f8f9ff;
+  grid-row: span 2;
+  min-height: auto;
+}
+
+.eov-class-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.eov-expand-icon {
+  margin-left: auto;
+  color: #6c757d;
+  font-size: 12px;
+  transition: transform 0.2s;
+}
+
+.eov-class-card.expanded .eov-expand-icon {
+  transform: rotate(0deg);
+}
+
+/* Property Summary for Non-Expanded Cards */
+.eov-property-summary {
+  margin: 8px 0;
+}
+
+.eov-property-counts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.eov-count-badge {
+  background: #e9ecef;
+  color: #495057;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.eov-count-badge:first-child {
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+.eov-count-badge:nth-child(2) {
+  background: #f3e5f5;
+  color: #7b1fa2;
+}
+
+/* Inline Properties */
+.eov-class-properties {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e9ecef;
+}
+
+.eov-class-properties h5 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #495057;
+}
+
+.eov-class-properties .eov-property-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.eov-class-properties .eov-property-item {
+  background: #fff;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.eov-class-properties .eov-property-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.eov-class-properties .eov-property-name {
+  font-weight: 500;
+  color: #495057;
+  flex: 1;
+}
+
+.eov-class-properties .eov-property-description {
+  font-size: 12px;
+  color: #6c757d;
+  margin-bottom: 8px;
+}
+
+.eov-class-properties .eov-property-relationship {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.eov-class-properties .eov-domain,
+.eov-class-properties .eov-range {
+  background: #f8f9fa;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+/* Property Subtabs */
+.eov-property-subtabs {
+  display: flex;
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 4px;
+  margin-bottom: 20px;
+  gap: 4px;
+}
+
+.eov-subtab {
+  flex: 1;
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #6c757d;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.eov-subtab:hover {
+  color: #495057;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.eov-subtab.active {
+  color: #667eea;
+  background: #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Cardinality Display */
+.eov-cardinality {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 6px 12px;
+  background: #e3f2fd;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.eov-cardinality-label {
+  font-weight: 600;
+  color: #1976d2;
+}
+
+.eov-cardinality-value {
+  color: #1565c0;
+  font-family: monospace;
+  background: #fff;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+/* Property Details Inline */
+.eov-property-details-inline {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e9ecef;
+  background: #fff;
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.eov-class-icon {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.eov-class-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #212529;
+}
+
+.eov-class-description {
+  color: #6c757d;
+  font-size: 14px;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.eov-class-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.eov-class-parent {
+  font-size: 12px;
+  color: #667eea;
+  font-weight: 500;
+}
+
+.eov-class-uri {
+  font-size: 11px;
+  color: #adb5bd;
+}
+
+.eov-class-uri code {
+  background: #f8f9fa;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+/* Properties */
+.eov-properties {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.eov-properties-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.eov-property-card {
+  background: #fff;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.eov-property-card:hover {
+  border-color: #667eea;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.eov-property-card.selected {
+  border-color: #667eea;
+  background: #f8f9ff;
+}
+
+.eov-property-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.eov-property-icon {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.eov-property-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #212529;
+  flex: 1;
+}
+
+.eov-property-type-badge {
+  background: #e9ecef;
+  color: #495057;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.eov-property-description {
+  color: #6c757d;
+  font-size: 14px;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.eov-property-relationship {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.eov-domain, .eov-range {
+  background: #f8f9fa;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-weight: 500;
+  color: #495057;
+}
+
+.eov-arrow {
+  color: #6c757d;
+  font-weight: bold;
+}
+
+/* Details Panels */
+.eov-class-details, .eov-property-details {
+  background: #fff;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 24px;
+  margin-top: 20px;
+}
+
+.eov-class-details h4, .eov-property-details h4 {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #212529;
+}
+
+.eov-details-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.eov-details-section h5 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #495057;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.eov-property-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.eov-property-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f8f9fa;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.eov-property-name {
+  font-weight: 500;
+  color: #495057;
+}
+
+.eov-property-type {
+  background: #667eea;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.eov-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.eov-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.eov-detail-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6c757d;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.eov-detail-value {
+  font-size: 14px;
+  color: #495057;
+}
+
+.eov-detail-value code {
+  background: #f8f9fa;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.eov-empty {
+  color: #adb5bd;
+  font-style: italic;
+  font-size: 14px;
+}
+
+/* Graph Placeholder */
+.eov-graph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 400px;
+}
+
+.eov-graph-placeholder {
+  text-align: center;
+  color: #6c757d;
+}
+
+.eov-graph-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+
+.eov-graph-placeholder h4 {
+  margin: 0 0 8px 0;
+  font-size: 20px;
+  color: #495057;
+}
+
+.eov-graph-placeholder p {
+  margin: 0 0 20px 0;
+  font-size: 14px;
+}
+
+/* Loading */
+.eov-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 300px;
+  color: #6c757d;
+}
+
+.eov-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #e9ecef;
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* TTL Source View */
+.eov-ttl {
+  height: 100%;
+  min-height: 400px;
+}
+
+.eov-ttl-content {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 16px;
+  border-radius: 8px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: auto;
+  max-height: 600px;
+  white-space: pre;
+  margin: 0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .eov-header {
+    flex-direction: column;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  
+  .eov-stats-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .eov-classes-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .eov-tabs {
+    overflow-x: auto;
+    padding: 0 16px;
+  }
+  
+  .eov-content {
+    padding: 16px;
+  }
+}

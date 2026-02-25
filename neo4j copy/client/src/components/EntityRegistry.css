@@ -1,0 +1,597 @@
+/* Entity Registry - Minimal Black & White */
+
+.entity-registry {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #fff;
+}
+
+.er-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #ddd;
+}
+
+.er-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.er-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.er-search {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  width: 220px;
+}
+
+.er-search:focus {
+  outline: none;
+  border-color: #999;
+}
+
+.er-filter {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #fff;
+}
+
+.er-btn {
+  padding: 8px 14px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  background: #fff;
+}
+
+.er-btn:hover {
+  background: #f5f5f5;
+}
+
+.er-btn.primary {
+  background: #000;
+  color: #fff;
+  border-color: #000;
+}
+
+.er-btn.primary:hover {
+  background: #333;
+}
+
+.er-content {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
+.er-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.er-table th,
+.er-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+  font-size: 13px;
+}
+
+.er-table th {
+  font-weight: 600;
+  color: #333;
+  background: #fafafa;
+  position: sticky;
+  top: 0;
+}
+
+.er-table tr:hover {
+  background: #fafafa;
+}
+
+.er-table .entity-label {
+  font-weight: 500;
+}
+
+.er-table .entity-type {
+  padding: 3px 8px;
+  background: #f0f0f0;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.er-table .entity-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.er-table .entity-actions button {
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.er-table .entity-actions button:hover {
+  background: #f5f5f5;
+}
+
+.er-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: #555;
+}
+
+.er-empty .icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.er-empty h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.er-empty p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.er-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px;
+  color: #555;
+}
+
+.er-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  border-top: 1px solid #ddd;
+}
+
+.er-pagination button {
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.er-pagination button:hover:not(:disabled) {
+  background: #f5f5f5;
+}
+
+.er-pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.er-pagination .page-info {
+  font-size: 12px;
+  color: #555;
+}
+
+/* Modal */
+.er-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.er-modal {
+  background: #fff;
+  border-radius: 6px;
+  width: 100%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow: hidden;
+}
+
+.er-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #ddd;
+}
+
+.er-modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.er-modal-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #555;
+}
+
+.er-modal-body {
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.er-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid #ddd;
+  background: #fafafa;
+}
+
+.er-form-group {
+  margin-bottom: 14px;
+}
+
+.er-form-group label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.er-form-group input,
+.er-form-group select,
+.er-form-group textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.er-form-group input:focus,
+.er-form-group select:focus,
+.er-form-group textarea:focus {
+  outline: none;
+  border-color: #999;
+}
+
+/* Relationship counts */
+.relationships-cell {
+  font-size: 12px;
+}
+
+.rel-count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rel-out,
+.rel-in {
+  padding: 2px 6px;
+  background: #f5f5f5;
+  border-radius: 3px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.rel-out {
+  color: #333;
+}
+
+.rel-in {
+  color: #555;
+}
+
+.rel-total {
+  color: #666;
+  font-size: 11px;
+}
+
+.rel-none {
+  color: #999;
+}
+
+/* ===== Styles for EntityRegistry.js class names ===== */
+
+.entity-registry-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #ddd;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-title h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.entity-count {
+  font-size: 13px;
+  color: #666;
+  background: #f5f5f5;
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+
+.header-filters {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-input {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  width: 220px;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #999;
+}
+
+.clear-search {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.clear-search:hover {
+  color: #333;
+}
+
+.class-filter {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  background: #fff;
+}
+
+.entity-registry-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: #fff5f5;
+  border-bottom: 1px solid #ffcccc;
+  color: #cc0000;
+  font-size: 13px;
+}
+
+.entity-registry-error button {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.entity-registry-error button:hover {
+  background: #f5f5f5;
+}
+
+.entity-table-container {
+  flex: 1;
+  overflow: auto;
+}
+
+.entity-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.entity-table th,
+.entity-table td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+  font-size: 13px;
+}
+
+.entity-table th {
+  font-weight: 600;
+  color: #333;
+  background: #fafafa;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.entity-row {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.entity-row:hover {
+  background: #fafafa;
+}
+
+.name-cell .entity-name {
+  font-weight: 500;
+}
+
+.class-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  background: #f0f0f0;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #333;
+}
+
+.id-cell {
+  font-family: monospace;
+  font-size: 12px;
+  color: #555;
+}
+
+.date-cell {
+  white-space: nowrap;
+  color: #555;
+}
+
+.sources-cell {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.source-tag {
+  display: inline-block;
+  padding: 2px 6px;
+  background: #f5f5f5;
+  border: 1px solid #eee;
+  border-radius: 3px;
+  font-size: 11px;
+  color: #555;
+}
+
+.loading-cell {
+  text-align: center;
+  padding: 40px 20px;
+  color: #666;
+}
+
+.loading-cell .loading-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #eee;
+  border-top-color: #000;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+.empty-cell {
+  text-align: center;
+  padding: 40px 20px;
+  color: #666;
+}
+
+.empty-cell .empty-icon {
+  display: block;
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+
+.clear-filters-btn {
+  background: none;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #555;
+  margin-top: 8px;
+}
+
+.clear-filters-btn:hover {
+  background: #f5f5f5;
+}
+
+.entity-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-top: 1px solid #ddd;
+}
+
+.pagination-btn {
+  padding: 6px 14px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background: #f5f5f5;
+}
+
+.pagination-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pagination-info {
+  font-size: 13px;
+  color: #666;
+}
+
+.entity-registry-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: #555;
+  text-align: center;
+}
+
+.entity-registry-empty .empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.entity-registry-empty p {
+  margin: 0;
+  font-size: 14px;
+}

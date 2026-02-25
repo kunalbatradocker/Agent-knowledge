@@ -1,0 +1,518 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix : <http://example.org/legal-contract#> .
+
+# Ontology Declaration
+:LegalContractOntology a owl:Ontology ;
+    rdfs:label "Legal Contract Ontology" ;
+    rdfs:comment "Comprehensive ontology for extracting structured information from legal contracts and agreements with validation constraints" ;
+    owl:versionInfo "1.0" .
+
+# ============================================================================
+# CLASSES
+# ============================================================================
+
+:Party a owl:Class ;
+    rdfs:label "Party" ;
+    rdfs:comment "A person or organization that is a party to the contract" .
+
+:Contract a owl:Class ;
+    rdfs:label "Contract" ;
+    rdfs:comment "The legal agreement document" .
+
+:Obligation a owl:Class ;
+    rdfs:label "Obligation" ;
+    rdfs:comment "A duty or requirement imposed by the contract" .
+
+:Term a owl:Class ;
+    rdfs:label "Term" ;
+    rdfs:comment "A defined term or definition in the contract" .
+
+:Clause a owl:Class ;
+    rdfs:label "Clause" ;
+    rdfs:comment "A specific section or provision of the contract" .
+
+:Payment a owl:Class ;
+    rdfs:label "Payment" ;
+    rdfs:comment "A payment term or schedule" .
+
+:Milestone a owl:Class ;
+    rdfs:label "Milestone" ;
+    rdfs:comment "A deliverable or milestone in the contract" .
+
+:Warranty a owl:Class ;
+    rdfs:label "Warranty" ;
+    rdfs:comment "A warranty or guarantee provided in the contract" .
+
+:Indemnity a owl:Class ;
+    rdfs:label "Indemnity" ;
+    rdfs:comment "An indemnification clause or provision" .
+
+# ============================================================================
+# OBJECT PROPERTIES (Relationships)
+# ============================================================================
+
+:partyTo a owl:ObjectProperty ;
+    rdfs:label "Party To" ;
+    rdfs:comment "Party is a signatory to the contract" ;
+    rdfs:domain :Party ;
+    rdfs:range :Contract .
+
+:hasObligation a owl:ObjectProperty ;
+    rdfs:label "Has Obligation" ;
+    rdfs:comment "Party has this obligation under the contract" ;
+    rdfs:domain :Party ;
+    rdfs:range :Obligation .
+
+:containsClause a owl:ObjectProperty ;
+    rdfs:label "Contains Clause" ;
+    rdfs:comment "Contract contains this clause" ;
+    rdfs:domain :Contract ;
+    rdfs:range :Clause .
+
+:definesTerm a owl:ObjectProperty ;
+    rdfs:label "Defines Term" ;
+    rdfs:comment "Contract or clause defines this term" ;
+    rdfs:domain [ owl:unionOf ( :Contract :Clause ) ] ;
+    rdfs:range :Term .
+
+:requiresPayment a owl:ObjectProperty ;
+    rdfs:label "Requires Payment" ;
+    rdfs:comment "Contract or obligation requires this payment" ;
+    rdfs:domain [ owl:unionOf ( :Contract :Obligation ) ] ;
+    rdfs:range :Payment .
+
+:references a owl:ObjectProperty ;
+    rdfs:label "References" ;
+    rdfs:comment "Clause references another clause or term" ;
+    rdfs:domain :Clause ;
+    rdfs:range [ owl:unionOf ( :Clause :Term ) ] .
+
+:imposes a owl:ObjectProperty ;
+    rdfs:label "Imposes" ;
+    rdfs:comment "Clause imposes this obligation" ;
+    rdfs:domain :Clause ;
+    rdfs:range :Obligation .
+
+:hasMilestone a owl:ObjectProperty ;
+    rdfs:label "Has Milestone" ;
+    rdfs:comment "Contract or obligation has this milestone" ;
+    rdfs:domain [ owl:unionOf ( :Contract :Obligation ) ] ;
+    rdfs:range :Milestone .
+
+:providesWarranty a owl:ObjectProperty ;
+    rdfs:label "Provides Warranty" ;
+    rdfs:comment "Party provides this warranty" ;
+    rdfs:domain :Party ;
+    rdfs:range :Warranty .
+
+:indemnifies a owl:ObjectProperty ;
+    rdfs:label "Indemnifies" ;
+    rdfs:comment "Party indemnifies another party" ;
+    rdfs:domain :Party ;
+    rdfs:range :Party .
+
+:hasIndemnity a owl:ObjectProperty ;
+    rdfs:label "Has Indemnity" ;
+    rdfs:comment "Contract contains this indemnity clause" ;
+    rdfs:domain :Contract ;
+    rdfs:range :Indemnity .
+
+# ============================================================================
+# DATA PROPERTIES - Party
+# ============================================================================
+
+:partyName a owl:DatatypeProperty ;
+    rdfs:label "Party Name" ;
+    rdfs:comment "Legal name of the party as it appears in the contract" ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:string .
+
+:partyType a owl:DatatypeProperty ;
+    rdfs:label "Party Type" ;
+    rdfs:comment "Type of party: individual, corporation, partnership, government, or non_profit" ;
+    rdfs:domain :Party ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "individual" "corporation" "partnership" "government" "non_profit" )
+    ] .
+
+:partyRole a owl:DatatypeProperty ;
+    rdfs:label "Party Role" ;
+    rdfs:comment "Role in the contract: buyer, seller, licensor, licensee, contractor, or client" ;
+    rdfs:domain :Party ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "buyer" "seller" "licensor" "licensee" "contractor" "client" "vendor" "service_provider" )
+    ] .
+
+:partyAddress a owl:DatatypeProperty ;
+    rdfs:label "Party Address" ;
+    rdfs:comment "Physical or registered address of the party" ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:string .
+
+:partyEmail a owl:DatatypeProperty ;
+    rdfs:label "Party Email" ;
+    rdfs:comment "Email address of the party for contract communications" ;
+    rdfs:domain :Party ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:onDatatype xsd:string ;
+        owl:withRestrictions (
+            [ xsd:pattern "^[\\w.%+-]+@[\\w.-]+\\.[A-Za-z]{2,}$" ]
+        )
+    ] .
+
+:jurisdiction a owl:DatatypeProperty ;
+    rdfs:label "Jurisdiction" ;
+    rdfs:comment "Legal jurisdiction of the party" ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:string .
+
+:registrationNumber a owl:DatatypeProperty ;
+    rdfs:label "Registration Number" ;
+    rdfs:comment "Company registration number or tax ID" ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:string .
+
+:authorizedSignatory a owl:DatatypeProperty ;
+    rdfs:label "Authorized Signatory" ;
+    rdfs:comment "Name of the person authorized to sign on behalf of the party" ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:string .
+
+:signatoryTitle a owl:DatatypeProperty ;
+    rdfs:label "Signatory Title" ;
+    rdfs:comment "Title or position of the authorized signatory" ;
+    rdfs:domain :Party ;
+    rdfs:range xsd:string .
+
+# ============================================================================
+# DATA PROPERTIES - Contract
+# ============================================================================
+
+:contractTitle a owl:DatatypeProperty ;
+    rdfs:label "Contract Title" ;
+    rdfs:comment "Title or name of the contract" ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:string .
+
+:contractType a owl:DatatypeProperty ;
+    rdfs:label "Contract Type" ;
+    rdfs:comment "Type of contract: service_agreement, purchase_agreement, license, employment, nda, lease, or partnership" ;
+    rdfs:domain :Contract ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "service_agreement" "purchase_agreement" "license" "employment" "nda" "lease" "partnership" "consulting" )
+    ] .
+
+:effectiveDate a owl:DatatypeProperty ;
+    rdfs:label "Effective Date" ;
+    rdfs:comment "Date when the contract becomes effective" ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:date .
+
+:expirationDate a owl:DatatypeProperty ;
+    rdfs:label "Expiration Date" ;
+    rdfs:comment "Date when the contract expires or terminates" ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:date .
+
+:executionDate a owl:DatatypeProperty ;
+    rdfs:label "Execution Date" ;
+    rdfs:comment "Date the contract was signed by all parties" ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:date .
+
+:governingLaw a owl:DatatypeProperty ;
+    rdfs:label "Governing Law" ;
+    rdfs:comment "Jurisdiction whose laws govern the contract" ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:string .
+
+:contractValue a owl:DatatypeProperty ;
+    rdfs:label "Contract Value" ;
+    rdfs:comment "Total monetary value or consideration of the contract" ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:decimal .
+
+:currency a owl:DatatypeProperty ;
+    rdfs:label "Currency" ;
+    rdfs:comment "Currency code for contract value (e.g., USD, EUR, GBP)" ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:string .
+
+:renewalTerms a owl:DatatypeProperty ;
+    rdfs:label "Renewal Terms" ;
+    rdfs:comment "Terms and conditions for contract renewal" ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:string .
+
+:terminationNotice a owl:DatatypeProperty ;
+    rdfs:label "Termination Notice" ;
+    rdfs:comment "Required notice period for termination (in days)" ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:integer .
+
+:isAutoRenew a owl:DatatypeProperty ;
+    rdfs:label "Is Auto Renew" ;
+    rdfs:comment "Boolean flag indicating if contract automatically renews" ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:boolean .
+
+:confidentialityPeriod a owl:DatatypeProperty ;
+    rdfs:label "Confidentiality Period" ;
+    rdfs:comment "Duration of confidentiality obligations (in years)" ;
+    rdfs:domain :Contract ;
+    rdfs:range xsd:integer .
+
+# ============================================================================
+# DATA PROPERTIES - Obligation
+# ============================================================================
+
+:obligationDescription a owl:DatatypeProperty ;
+    rdfs:label "Obligation Description" ;
+    rdfs:comment "Detailed description of the obligation" ;
+    rdfs:domain :Obligation ;
+    rdfs:range xsd:string .
+
+:obligationType a owl:DatatypeProperty ;
+    rdfs:label "Obligation Type" ;
+    rdfs:comment "Type of obligation: payment, delivery, performance, reporting, or compliance" ;
+    rdfs:domain :Obligation ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "payment" "delivery" "performance" "reporting" "compliance" "confidentiality" "non_compete" )
+    ] .
+
+:obligationDueDate a owl:DatatypeProperty ;
+    rdfs:label "Obligation Due Date" ;
+    rdfs:comment "Date by which the obligation must be fulfilled" ;
+    rdfs:domain :Obligation ;
+    rdfs:range xsd:date .
+
+:frequency a owl:DatatypeProperty ;
+    rdfs:label "Frequency" ;
+    rdfs:comment "How often the obligation must be fulfilled: once, daily, weekly, monthly, quarterly, or annually" ;
+    rdfs:domain :Obligation ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "once" "daily" "weekly" "monthly" "quarterly" "annually" )
+    ] .
+
+:penalty a owl:DatatypeProperty ;
+    rdfs:label "Penalty" ;
+    rdfs:comment "Penalty or consequence for non-compliance" ;
+    rdfs:domain :Obligation ;
+    rdfs:range xsd:string .
+
+:penaltyAmount a owl:DatatypeProperty ;
+    rdfs:label "Penalty Amount" ;
+    rdfs:comment "Monetary penalty amount for non-compliance" ;
+    rdfs:domain :Obligation ;
+    rdfs:range xsd:decimal .
+
+:isMandatory a owl:DatatypeProperty ;
+    rdfs:label "Is Mandatory" ;
+    rdfs:comment "Boolean flag indicating if the obligation is mandatory" ;
+    rdfs:domain :Obligation ;
+    rdfs:range xsd:boolean .
+
+# ============================================================================
+# DATA PROPERTIES - Term
+# ============================================================================
+
+:termName a owl:DatatypeProperty ;
+    rdfs:label "Term Name" ;
+    rdfs:comment "The defined term as it appears in the contract" ;
+    rdfs:domain :Term ;
+    rdfs:range xsd:string .
+
+:termDefinition a owl:DatatypeProperty ;
+    rdfs:label "Term Definition" ;
+    rdfs:comment "The definition or meaning of the term" ;
+    rdfs:domain :Term ;
+    rdfs:range xsd:string .
+
+:sectionReference a owl:DatatypeProperty ;
+    rdfs:label "Section Reference" ;
+    rdfs:comment "Section or article number where the term is defined" ;
+    rdfs:domain :Term ;
+    rdfs:range xsd:string .
+
+# ============================================================================
+# DATA PROPERTIES - Clause
+# ============================================================================
+
+:clauseTitle a owl:DatatypeProperty ;
+    rdfs:label "Clause Title" ;
+    rdfs:comment "Title or heading of the clause" ;
+    rdfs:domain :Clause ;
+    rdfs:range xsd:string .
+
+:sectionNumber a owl:DatatypeProperty ;
+    rdfs:label "Section Number" ;
+    rdfs:comment "Section or article number (e.g., 3.1, Article IV)" ;
+    rdfs:domain :Clause ;
+    rdfs:range xsd:string .
+
+:clauseType a owl:DatatypeProperty ;
+    rdfs:label "Clause Type" ;
+    rdfs:comment "Type of clause: payment, termination, liability, warranty, indemnity, confidentiality, or dispute_resolution" ;
+    rdfs:domain :Clause ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "payment" "termination" "liability" "warranty" "indemnity" "confidentiality" "dispute_resolution" "force_majeure" )
+    ] .
+
+:clauseText a owl:DatatypeProperty ;
+    rdfs:label "Clause Text" ;
+    rdfs:comment "Full text content of the clause" ;
+    rdfs:domain :Clause ;
+    rdfs:range xsd:string .
+
+:clauseSummary a owl:DatatypeProperty ;
+    rdfs:label "Clause Summary" ;
+    rdfs:comment "Brief summary of the clause for quick reference" ;
+    rdfs:domain :Clause ;
+    rdfs:range xsd:string .
+
+# ============================================================================
+# DATA PROPERTIES - Payment
+# ============================================================================
+
+:paymentAmount a owl:DatatypeProperty ;
+    rdfs:label "Payment Amount" ;
+    rdfs:comment "Monetary amount of the payment" ;
+    rdfs:domain :Payment ;
+    rdfs:range xsd:decimal .
+
+:paymentCurrency a owl:DatatypeProperty ;
+    rdfs:label "Payment Currency" ;
+    rdfs:comment "Currency code for the payment (e.g., USD, EUR, GBP)" ;
+    rdfs:domain :Payment ;
+    rdfs:range xsd:string .
+
+:paymentDueDate a owl:DatatypeProperty ;
+    rdfs:label "Payment Due Date" ;
+    rdfs:comment "Date when the payment is due" ;
+    rdfs:domain :Payment ;
+    rdfs:range xsd:date .
+
+:paymentType a owl:DatatypeProperty ;
+    rdfs:label "Payment Type" ;
+    rdfs:comment "Type of payment: upfront, milestone, recurring, final, or deposit" ;
+    rdfs:domain :Payment ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "upfront" "milestone" "recurring" "final" "deposit" "installment" )
+    ] .
+
+:paymentMethod a owl:DatatypeProperty ;
+    rdfs:label "Payment Method" ;
+    rdfs:comment "Method of payment: wire_transfer, check, credit_card, or ach" ;
+    rdfs:domain :Payment ;
+    rdfs:range [
+        a rdfs:Datatype ;
+        owl:oneOf ( "wire_transfer" "check" "credit_card" "ach" "cash" "cryptocurrency" )
+    ] .
+
+:paymentDescription a owl:DatatypeProperty ;
+    rdfs:label "Payment Description" ;
+    rdfs:comment "Description of what the payment is for" ;
+    rdfs:domain :Payment ;
+    rdfs:range xsd:string .
+
+:lateFeePercentage a owl:DatatypeProperty ;
+    rdfs:label "Late Fee Percentage" ;
+    rdfs:comment "Percentage late fee for overdue payments" ;
+    rdfs:domain :Payment ;
+    rdfs:range xsd:decimal .
+
+# ============================================================================
+# DATA PROPERTIES - Milestone
+# ============================================================================
+
+:milestoneName a owl:DatatypeProperty ;
+    rdfs:label "Milestone Name" ;
+    rdfs:comment "Name or title of the milestone" ;
+    rdfs:domain :Milestone ;
+    rdfs:range xsd:string .
+
+:milestoneDescription a owl:DatatypeProperty ;
+    rdfs:label "Milestone Description" ;
+    rdfs:comment "Detailed description of the milestone deliverable" ;
+    rdfs:domain :Milestone ;
+    rdfs:range xsd:string .
+
+:milestoneDueDate a owl:DatatypeProperty ;
+    rdfs:label "Milestone Due Date" ;
+    rdfs:comment "Date when the milestone is due" ;
+    rdfs:domain :Milestone ;
+    rdfs:range xsd:date .
+
+:milestoneValue a owl:DatatypeProperty ;
+    rdfs:label "Milestone Value" ;
+    rdfs:comment "Monetary value associated with the milestone" ;
+    rdfs:domain :Milestone ;
+    rdfs:range xsd:decimal .
+
+:isCompleted a owl:DatatypeProperty ;
+    rdfs:label "Is Completed" ;
+    rdfs:comment "Boolean flag indicating if the milestone is completed" ;
+    rdfs:domain :Milestone ;
+    rdfs:range xsd:boolean .
+
+# ============================================================================
+# DATA PROPERTIES - Warranty
+# ============================================================================
+
+:warrantyDescription a owl:DatatypeProperty ;
+    rdfs:label "Warranty Description" ;
+    rdfs:comment "Description of the warranty or guarantee" ;
+    rdfs:domain :Warranty ;
+    rdfs:range xsd:string .
+
+:warrantyPeriod a owl:DatatypeProperty ;
+    rdfs:label "Warranty Period" ;
+    rdfs:comment "Duration of the warranty in months" ;
+    rdfs:domain :Warranty ;
+    rdfs:range xsd:integer .
+
+:warrantyStartDate a owl:DatatypeProperty ;
+    rdfs:label "Warranty Start Date" ;
+    rdfs:comment "Date when the warranty period begins" ;
+    rdfs:domain :Warranty ;
+    rdfs:range xsd:date .
+
+:warrantyEndDate a owl:DatatypeProperty ;
+    rdfs:label "Warranty End Date" ;
+    rdfs:comment "Date when the warranty period ends" ;
+    rdfs:domain :Warranty ;
+    rdfs:range xsd:date .
+
+# ============================================================================
+# DATA PROPERTIES - Indemnity
+# ============================================================================
+
+:indemnityDescription a owl:DatatypeProperty ;
+    rdfs:label "Indemnity Description" ;
+    rdfs:comment "Description of the indemnification provision" ;
+    rdfs:domain :Indemnity ;
+    rdfs:range xsd:string .
+
+:indemnityScope a owl:DatatypeProperty ;
+    rdfs:label "Indemnity Scope" ;
+    rdfs:comment "Scope of indemnification coverage" ;
+    rdfs:domain :Indemnity ;
+    rdfs:range xsd:string .
+
+:indemnityLimit a owl:DatatypeProperty ;
+    rdfs:label "Indemnity Limit" ;
+    rdfs:comment "Maximum liability limit for indemnification" ;
+    rdfs:domain :Indemnity ;
+    rdfs:range xsd:decimal .
+

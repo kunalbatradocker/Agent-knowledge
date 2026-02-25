@@ -1,0 +1,763 @@
+.dsm-container {
+  padding: 20px;
+}
+
+.dsm-header {
+  margin-bottom: 20px;
+}
+
+.dsm-header h2 {
+  margin: 0 0 4px;
+  font-size: 20px;
+  color: var(--pf-purple, #6B21A8);
+}
+
+.dsm-subtitle {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--pf-text-secondary, #6B7280);
+}
+
+.dsm-header-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dsm-btn-primary {
+  padding: 8px 16px;
+  background: var(--pf-purple, #6B21A8);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.dsm-btn-primary:hover { opacity: 0.9; }
+.dsm-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.dsm-btn-secondary {
+  padding: 8px 16px;
+  background: var(--pf-purple-lighter, #EDE9FE);
+  color: var(--pf-purple, #6B21A8);
+  border: 1px solid var(--pf-purple-border, #A78BFA);
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.dsm-btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.dsm-btn-danger {
+  color: #DC2626;
+  background: #FEE2E2;
+  border: 1px solid #FECACA;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dsm-error {
+  padding: 10px 14px;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: 8px;
+  color: #DC2626;
+  font-size: 13px;
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.dsm-error button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  color: #DC2626;
+}
+
+/* Add Form */
+.dsm-add-form {
+  padding: 16px;
+  border: 1px solid var(--pf-purple-border, #A78BFA);
+  border-radius: 10px;
+  background: var(--pf-purple-lighter, #EDE9FE);
+  margin-bottom: 20px;
+}
+
+.dsm-form-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.dsm-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dsm-field-wide { flex: 2; }
+.dsm-field-narrow { flex: 0.5; min-width: 80px; }
+
+.dsm-field label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--pf-text-secondary, #6B7280);
+}
+
+.dsm-field input,
+.dsm-field select {
+  padding: 8px 10px;
+  border: 1px solid var(--pf-border, #E5E7EB);
+  border-radius: 6px;
+  font-size: 13px;
+  background: #fff;
+}
+
+.dsm-form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Empty state */
+.dsm-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--pf-text-secondary, #6B7280);
+}
+
+.dsm-empty-icon {
+  font-size: 40px;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.dsm-empty p {
+  margin: 4px 0;
+  font-size: 14px;
+}
+
+/* Catalog cards */
+.dsm-catalog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dsm-catalog-card {
+  border: 1px solid var(--pf-border, #E5E7EB);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.dsm-catalog-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.dsm-catalog-icon {
+  font-size: 24px;
+}
+
+.dsm-catalog-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.dsm-catalog-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--pf-text-primary, #111827);
+}
+
+.dsm-catalog-type {
+  font-size: 12px;
+  color: var(--pf-text-secondary, #6B7280);
+}
+
+.dsm-catalog-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.dsm-catalog-actions button {
+  padding: 5px 10px;
+  font-size: 12px;
+  border: 1px solid var(--pf-border, #E5E7EB);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.dsm-catalog-actions button:hover {
+  background: var(--pf-bg-light, #F9FAFB);
+}
+
+.dsm-catalog-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Schema panel */
+.dsm-schema-panel {
+  padding: 12px 16px;
+  border-top: 1px solid var(--pf-border, #E5E7EB);
+  background: var(--pf-bg-light, #F9FAFB);
+}
+
+.dsm-schema-panel h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--pf-text-primary, #111827);
+}
+
+.dsm-table-detail {
+  margin-bottom: 4px;
+}
+
+.dsm-table-detail summary {
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 0;
+  color: var(--pf-text-primary, #111827);
+}
+
+.dsm-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 0 6px 16px;
+}
+
+.dsm-col {
+  padding: 2px 8px;
+  font-size: 11px;
+  background: #fff;
+  border: 1px solid var(--pf-border, #E5E7EB);
+  border-radius: 4px;
+}
+
+.dsm-col em {
+  color: var(--pf-text-secondary, #6B7280);
+  font-style: normal;
+  font-size: 10px;
+}
+
+/* Ontology Review Modal */
+.dsm-review-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dsm-review-modal {
+  background: #fff;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 900px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+}
+
+.dsm-review-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #eee;
+}
+
+.dsm-review-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.dsm-review-close {
+  background: none;
+  border: 1px solid #ddd;
+  width: 30px; height: 30px;
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+  color: #555;
+}
+
+.dsm-review-meta {
+  display: flex;
+  gap: 16px;
+  padding: 12px 20px;
+  background: #fafafa;
+  border-bottom: 1px solid #eee;
+  font-size: 13px;
+  color: #555;
+}
+
+.dsm-review-body {
+  flex: 1;
+  padding: 16px 20px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.dsm-review-body label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.dsm-review-editor {
+  flex: 1;
+  min-height: 350px;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  background: #f8f8f8;
+  color: #333;
+}
+
+.dsm-review-editor:focus {
+  outline: none;
+  border-color: #999;
+}
+
+.dsm-review-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid #eee;
+  background: #fafafa;
+}
+
+/* Review modal fields */
+.dsm-review-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.dsm-review-field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.dsm-review-field input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.dsm-review-field input:focus {
+  outline: none;
+  border-color: #999;
+}
+
+.dsm-review-hint {
+  display: block;
+  font-size: 11px;
+  color: #888;
+  margin-top: 4px;
+}
+
+/* Review modal tabs */
+.dsm-review-tabs {
+  display: flex;
+  gap: 0;
+  margin: 0.75rem 0 0.5rem;
+  border-bottom: 2px solid #333;
+}
+.dsm-review-tab {
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border: none;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 0.85rem;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.2s, border-color 0.2s;
+}
+.dsm-review-tab:hover { color: #ddd; }
+.dsm-review-tab.active {
+  color: #7c9eff;
+  border-bottom-color: #7c9eff;
+}
+
+/* Mapping table */
+.dsm-mapping-table-wrap {
+  max-height: 400px;
+  overflow: auto;
+  border: 1px solid #333;
+  border-radius: 6px;
+  margin-top: 0.5rem;
+}
+.dsm-mapping-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.dsm-mapping-table th {
+  background: #1e1e2e;
+  color: #aaa;
+  padding: 0.5rem 0.6rem;
+  text-align: left;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  border-bottom: 1px solid #444;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dsm-mapping-table td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid #2a2a3a;
+  color: #ccc;
+}
+.dsm-mapping-row:hover td { background: #1a1a2a; }
+.dsm-mapping-name { font-weight: 600; color: #e0e0e0; }
+.dsm-mapping-source { font-family: monospace; font-size: 0.78rem; color: #8ab4f8; }
+.dsm-mapping-badge {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.dsm-badge-class { background: #1a3a5c; color: #7cb3ff; }
+.dsm-badge-dataproperty { background: #1a3a3a; color: #7ccfcf; }
+.dsm-badge-objectproperty { background: #3a2a1a; color: #cfaa7c; }
+
+/* Trino Connection Card */
+.dsm-trino-card {
+  border-color: var(--pf-purple-border, #A78BFA);
+}
+
+.dsm-trino-card .dsm-catalog-header {
+  background: var(--pf-purple-lighter, #F5F3FF);
+}
+
+.dsm-trino-card.dsm-card-expanded .dsm-catalog-header {
+  border-bottom: 1px solid var(--pf-border, #E5E7EB);
+}
+
+.dsm-trino-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--pf-purple, #6B21A8);
+  color: white;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.dsm-trino-badge.env {
+  background: var(--pf-text-secondary, #6B7280);
+}
+
+/* Trino expanded area */
+.dsm-trino-expanded {
+  border-top: 1px solid var(--pf-border, #E5E7EB);
+}
+
+.dsm-trino-catalogs {
+  padding: 12px 16px;
+}
+
+.dsm-trino-catalogs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.dsm-trino-catalogs-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pf-text-primary, #111827);
+}
+
+.dsm-trino-catalogs-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.dsm-trino-catalogs-empty {
+  font-size: 13px;
+  color: var(--pf-text-secondary, #6B7280);
+  padding: 12px 0;
+  margin: 0;
+}
+
+.dsm-trino-catalog-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dsm-trino-catalog-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--pf-border, #E5E7EB);
+  border-radius: 8px;
+  background: #fff;
+  flex-wrap: wrap;
+}
+
+.dsm-trino-catalog-icon {
+  font-size: 18px;
+}
+
+.dsm-trino-catalog-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.dsm-trino-catalog-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pf-text-primary, #111827);
+}
+
+.dsm-trino-catalog-detail {
+  font-size: 11px;
+  color: var(--pf-text-secondary, #6B7280);
+}
+
+.dsm-trino-catalog-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.dsm-trino-catalog-actions button {
+  padding: 3px 8px;
+  font-size: 12px;
+  border: 1px solid var(--pf-border, #E5E7EB);
+  border-radius: 5px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.dsm-trino-catalog-actions button:hover {
+  background: var(--pf-bg-light, #F9FAFB);
+}
+
+.dsm-trino-catalog-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dsm-btn-danger-sm {
+  color: #DC2626;
+  background: #FEE2E2;
+  border: 1px solid #FECACA;
+  border-radius: 5px;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dsm-trino-catalog-schema {
+  width: 100%;
+  padding: 6px 0 0 28px;
+}
+
+/* Trino connection settings (inside expanded card) */
+.dsm-trino-settings {
+  padding: 12px 16px;
+  border-top: 1px solid var(--pf-border, #E5E7EB);
+  background: var(--pf-bg-light, #F9FAFB);
+}
+
+.dsm-trino-settings .dsm-field input,
+.dsm-trino-settings .dsm-field select {
+  background: #fff;
+  border-color: var(--pf-border, #E5E7EB);
+  color: var(--pf-text-primary, #111827);
+}
+
+.dsm-trino-settings input[type="password"] {
+  padding: 8px 10px;
+  border: 1px solid var(--pf-border, #E5E7EB);
+  border-radius: 6px;
+  font-size: 13px;
+  background: #fff;
+  color: var(--pf-text-primary, #111827);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.dsm-trino-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.dsm-btn-sm {
+  padding: 5px 10px !important;
+  font-size: 12px !important;
+}
+
+/* Auth form fields */
+.dsm-trino-settings select {
+  padding: 8px 10px;
+  border: 1px solid var(--pf-border, #E5E7EB);
+  border-radius: 6px;
+  font-size: 13px;
+  background: #fff;
+  color: var(--pf-text-primary, #111827);
+}
+
+.dsm-jwt-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--pf-border, #E5E7EB);
+  border-radius: 6px;
+  font-family: 'SF Mono', Monaco, Consolas, monospace;
+  font-size: 12px;
+  background: #fff;
+  color: var(--pf-text-primary, #111827);
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.dsm-jwt-input:focus {
+  outline: none;
+  border-color: var(--pf-purple, #6B21A8);
+}
+
+.dsm-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--pf-text-secondary, #6B7280);
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.dsm-checkbox-label input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--pf-purple, #6B21A8);
+}
+
+.dsm-secret-set {
+  color: #22C55E;
+  font-size: 11px;
+  font-weight: 400;
+  margin-left: 6px;
+}
+
+.dsm-trino-form input[type="password"] {
+  padding: 8px 10px;
+  border: 1px solid var(--pf-border, #374151);
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--pf-surface, #1e1e2e);
+  color: var(--pf-text-primary, #E5E7EB);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.dsm-trino-form input[type="password"]:focus,
+.dsm-trino-form select:focus {
+  outline: none;
+  border-color: var(--pf-purple, #6B21A8);
+}
+
+/* Direct DB connection expanded area */
+.dsm-direct-expanded {
+  border-top: 1px solid var(--pf-border, #E5E7EB);
+}
+
+.dsm-direct-details {
+  padding: 12px 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 24px;
+}
+
+.dsm-direct-detail-row {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  align-items: baseline;
+}
+
+.dsm-detail-label {
+  font-weight: 500;
+  color: var(--pf-text-secondary, #6B7280);
+  min-width: 80px;
+}
+
+.dsm-direct-actions-bar {
+  padding: 8px 16px;
+  border-top: 1px solid var(--pf-border, #E5E7EB);
+  display: flex;
+  gap: 6px;
+}
+
+/* Status indicators */
+.dsm-status-dot {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 10px;
+}
+
+.dsm-status-active {
+  color: #22C55E;
+}
+
+.dsm-status-text {
+  font-size: 13px;
+}
+
+.dsm-status-active-text {
+  color: #22C55E;
+  font-weight: 500;
+}
+
+/* Expanded card state */
+.dsm-card-expanded {
+  border-color: var(--pf-purple-border, #A78BFA);
+}
+
+.dsm-card-expanded .dsm-catalog-header {
+  border-bottom: 1px solid var(--pf-border, #E5E7EB);
+}
