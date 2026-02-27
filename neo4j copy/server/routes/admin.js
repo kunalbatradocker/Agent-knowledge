@@ -339,16 +339,13 @@ router.get('/redis/stats', async (req, res) => {
       // Workspace-scoped stats
       const docIds = await redisService.sMembers(`workspace:${workspaceId}:docs`);
       
-      // Count chunks (vectors) for workspace documents
-      // Chunk keys are "chunk:{chunkId}" where chunkId = "{docId}_chunk_{index}"
+      // Count chunks (vectors) for workspace documents using the doc:chunks sets
       let totalChunks = 0;
       for (const docId of docIds) {
-        let cursor = '0';
-        do {
-          const result = await client.sendCommand(['SCAN', cursor, 'MATCH', `chunk:${docId}_*`, 'COUNT', '200']);
-          cursor = result[0];
-          totalChunks += result[1].length;
-        } while (cursor !== '0');
+        try {
+          const chunkCount = await client.sCard(`doc:${docId}:chunks`);
+          totalChunks += chunkCount;
+        } catch { /* skip */ }
       }
       
       // Count conversations that belong to this workspace

@@ -150,7 +150,9 @@ router.post('/catalogs', requireManager, async (req, res) => {
 router.get('/catalogs', async (req, res) => {
   try {
     const { tenantId, workspaceId } = getContext(req);
+    logger.info(`[Trino] GET /catalogs — tenant=${tenantId}, workspace=${workspaceId}, headers=[t=${req.headers['x-tenant-id']}, w=${req.headers['x-workspace-id']}], query=[t=${req.query.tenantId}, w=${req.query.workspaceId}]`);
     const catalogs = await trinoCatalogService.listCatalogs(tenantId, workspaceId);
+    logger.info(`[Trino] GET /catalogs — returning ${catalogs.length} catalog(s)`);
     res.json({ catalogs });
   } catch (err) {
     res.status(500).json({ error: err.message });

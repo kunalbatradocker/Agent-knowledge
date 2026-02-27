@@ -281,40 +281,12 @@ Rules:
    * Different from schema analysis - this maps to EXISTING classes/properties
    */
   async analyzeForMapping(headers, sampleRows, ontology, options = {}) {
-    const { sheets } = options;
+    const { sheets, dataProfile } = options;
     
-    // Multi-sheet: analyze per-sheet with sheet context
+    // Multi-sheet: single holistic LLM call with cross-sheet context for relationship detection
     if (sheets && sheets.length > 1) {
-      console.log(`🔗 Per-sheet mapping analysis: ${sheets.length} sheets`);
-      const allMappings = [];
-      const sheetPrimaryClasses = {};
-      
-      for (const sheet of sheets) {
-        const sheetRows = sampleRows.filter(r => r.__sheet === sheet.name);
-        const sheetHeaders = sheet.headers || headers.filter(h => {
-          return sheetRows.some(r => r[h] != null && r[h] !== '');
-        });
-        if (sheetHeaders.length === 0) continue;
-        
-        console.log(`🔗 Sheet "${sheet.name}": ${sheetHeaders.length} columns`);
-        const result = await this._analyzeForMappingSingle(sheetHeaders, sheetRows, ontology, sheet.name);
-        if (result.primaryClass) sheetPrimaryClasses[sheet.name] = result.primaryClass;
-        allMappings.push(...(result.mappings || []));
-      }
-      
-      // Deduplicate mappings (same column from multiple sheets — keep first)
-      const seen = new Set();
-      const dedupedMappings = allMappings.filter(m => {
-        if (seen.has(m.column)) return false;
-        seen.add(m.column);
-        return true;
-      });
-      
-      const primaryClass = Object.values(sheetPrimaryClasses)[0] || null;
-      // Resolve primaryClassLabel from the IRI
-      const primaryClassObj = primaryClass ? (ontology?.classes || []).find(c => c.iri === primaryClass) : null;
-      const primaryClassLabel = primaryClassObj?.label || primaryClassObj?.localName || '';
-      return { primaryClass, primaryClassLabel, primaryClassExplanation: `Per-sheet analysis`, mappings: dedupedMappings, sheetPrimaryClasses };
+      console.log(`🔗 Holistic multi-sheet mapping analysis: ${sheets.length} sheets`);
+      return this._analyzeMultiSheetMapping(headers, sampleRows, ontology, sheets, dataProfile);
     }
     
     // Single sheet or small column set
@@ -341,10 +313,305 @@ Rules:
       }
       return { primaryClass, primaryClassExplanation, mappings: allMappings };
     }
-    return this._analyzeForMappingSingle(headers, sampleRows, ontology);
+    return this._analyzeForMappingSingle(headers, sampleRows, ontology, null, dataProfile);
   }
 
-  async _analyzeForMappingSingle(headers, sampleRows, ontology, sheetName = null) {
+  /**
+   * Multi-sheet holistic mapping: sends ALL sheets + cross-sheet FK data in one LLM call
+   * so the LLM can reason about inter-sheet relationships.
+   */
+  async _analyzeMultiSheetMapping(headers, sampleRows, ontology, sheets, dataProfile) {
+    // For very large workbooks (>8 sheets or >50 total columns), go per-sheet
+    const totalColumns = sheets.reduce((sum, s) => sum + (s.headers?.length || 0), 0);
+    if (sheets.length > 8 || totalColumns > 50) {
+      console.log(`🔗 Very large workbook (${sheets.length} sheets, ${totalColumns} cols) — using per-sheet analysis`);
+      return this._fallbackPerSheetMapping(headers, sampleRows, ontology, sheets, dataProfile);
+    }
+
+    const safeOntology = sanitizeOntologyContext(ontology);
+    const allProps = ontology?.properties || [];
+    const dataProperties = safeOntology.dataProperties.length > 0 ? safeOntology.dataProperties : allProps.filter(p => p.type === 'datatypeProperty');
+    const objectProperties = safeOntology.objectProperties.length > 0 ? safeOntology.objectProperties : allProps.filter(p => p.type === 'objectProperty');
+    const classes = safeOntology.classes;
+
+    const normName = (n) => (n || '').toLowerCase().replace(/[\s_-]/g, '');
+    const domainMatchesClass = (prop, cls) => {
+      const cLabel = normName(cls.label);
+      const cLocal = normName(cls.localName);
+      const pDomain = normName(prop.domain);
+      const pDomainLabel = normName(prop.domainLabel);
+      return (pDomain && (pDomain === cLabel || pDomain === cLocal))
+        || (pDomainLabel && (pDomainLabel === cLabel || pDomainLabel === cLocal));
+    };
+
+    // Build ontology summary
+    const classDetails = classes.map(c => {
+      const classDataProps = dataProperties
+        .filter(p => domainMatchesClass(p, c))
+        .map(p => `${p.label || p.localName} (${p.range || 'string'})`);
+      const classObjProps = objectProperties
+        .filter(p => domainMatchesClass(p, c))
+        .map(p => `${p.label || p.localName} → ${p.rangeLabel || p.range || 'Entity'}`);
+      return `  ${c.label || c.localName}: ${c.comment || ''}
+    Data properties: ${classDataProps.join(', ') || 'none'}
+    Object properties: ${classObjProps.join(', ') || 'none'}`;
+    }).join('\n');
+
+    const objPropsStr = objectProperties.map(p =>
+      `${p.label || p.localName}: ${p.domainLabel || p.domain || 'any'} → ${p.rangeLabel || p.range || 'Entity'}`
+    ).join('\n  - ') || 'None';
+
+    // Build per-sheet summaries with sample data
+    const sheetSummaries = sheets.map(sheet => {
+      const sheetRows = sampleRows.filter(r => r.__sheet === sheet.name);
+      const sheetHeaders = sheet.headers || [];
+      const sampleData = this.buildSampleData(sanitizeHeaders(sheetHeaders), sanitizeSampleRows(sheetRows.slice(0, 2)));
+      
+      // Per-column profiling hints (compact)
+      let profileHints = '';
+      if (dataProfile?.columns) {
+        profileHints = sheetHeaders.map(h => {
+          const p = dataProfile.columns[h];
+          if (!p) return null;
+          const tags = [];
+          if (p.isId) tags.push('PK');
+          if (p.isFkCandidate) tags.push('FK');
+          if (p.isCategory) tags.push('CAT');
+          return `    "${h}": ${p.type}${tags.length ? ' [' + tags.join(',') + ']' : ''}`;
+        }).filter(Boolean).join('\n');
+      }
+      
+      return `SHEET: "${sheet.name}" (${sheet.rowCount || sheetRows.length} rows)
+  Columns: ${sheetHeaders.join(', ')}
+  Sample:
+${sampleData}
+${profileHints ? `  Profile:\n${profileHints}` : ''}`;
+    }).join('\n\n');
+
+    // Cross-sheet FK candidates from data profiling
+    let fkSection = '';
+    if (dataProfile?.fkCandidates?.length > 0) {
+      fkSection = `\nDETECTED CROSS-SHEET RELATIONSHIPS:
+${dataProfile.fkCandidates.map(fk =>
+  `  ${fk.fromSheet}.${fk.fromColumn} → ${fk.toSheet}.${fk.toColumn} (${(fk.matchRate * 100).toFixed(0)}% overlap)`
+).join('\n')}`;
+    }
+
+    const systemPrompt = `You are mapping a multi-sheet Excel workbook to an EXISTING ontology for knowledge graph construction.
+
+ONTOLOGY CLASSES:
+${classDetails || '  No classes defined'}
+
+OBJECT PROPERTIES:
+  - ${objPropsStr}
+${fkSection}
+
+RULES:
+- FK (isLiteral=false): column ends in ID matching a class, or references another entity
+- LITERAL (isLiteral=true): dates, numbers, text, hashes, booleans, PKs in own sheet
+- PK in own sheet = ALWAYS literal. Same column in other sheets = FK.
+- Use EXACT ontology property labels. Set propertyIsNew=true only if no match exists.
+- Keep reasoning VERY brief (max 5 words).
+
+Output ONLY valid JSON:
+{
+  "sheetMappings": {
+    "SheetName": {
+      "sheetClass": "class label",
+      "columns": [
+        {"column":"col","isLiteral":true,"property":"propLabel","propertyIsNew":false,"linkedClass":"","reasoning":"brief"}
+      ]
+    }
+  }
+}`;
+
+    const userPrompt = `Map this workbook:\n\n${sheetSummaries}\n\nOutput only JSON.`;
+
+    try {
+      console.log(`\n🔗 LLM multi-sheet mapping: ${sheets.length} sheets, ${totalColumns} total columns`);
+      const startTime = Date.now();
+
+      const content = await this._chat([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ], { maxTokens: 30000 });
+
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(`✅ Multi-sheet mapping complete in ${duration}s`);
+
+      let result;
+      try {
+        result = JSON.parse(this.extractJSON(content));
+      } catch (e) {
+        console.warn(`⚠️ Multi-sheet mapping JSON parse failed, falling back to per-sheet`);
+        console.warn(`⚠️ Raw response length: ${content?.length || 0} chars`);
+        return this._fallbackPerSheetMapping(headers, sampleRows, ontology, sheets, dataProfile);
+      }
+
+      if (!result.sheetMappings || Object.keys(result.sheetMappings).length === 0) {
+        console.warn(`⚠️ No sheetMappings in response, falling back to per-sheet`);
+        return this._fallbackPerSheetMapping(headers, sampleRows, ontology, sheets, dataProfile);
+      }
+
+      return this._normalizeMultiSheetMapping(result, ontology, sheets, headers);
+    } catch (error) {
+      logger.error('Multi-sheet LLM mapping failed:', error.message);
+      return this._fallbackPerSheetMapping(headers, sampleRows, ontology, sheets, dataProfile);
+    }
+  }
+
+  /**
+   * Fallback: per-sheet individual LLM calls (used when holistic call fails)
+   */
+  async _fallbackPerSheetMapping(headers, sampleRows, ontology, sheets, dataProfile) {
+    console.log(`🔗 Fallback: per-sheet mapping analysis`);
+    const allMappings = [];
+    const sheetPrimaryClasses = {};
+
+    for (const sheet of sheets) {
+      const sheetRows = sampleRows.filter(r => r.__sheet === sheet.name);
+      const sheetHeaders = sheet.headers || headers.filter(h => sheetRows.some(r => r[h] != null && r[h] !== ''));
+      if (sheetHeaders.length === 0) continue;
+
+      try {
+        const result = await this._analyzeForMappingSingle(sheetHeaders, sheetRows, ontology, sheet.name, dataProfile);
+        if (result.primaryClass) sheetPrimaryClasses[sheet.name] = result.primaryClass;
+        // Tag mappings with sheet name
+        for (const m of (result.mappings || [])) {
+          m._sheet = sheet.name;
+        }
+        allMappings.push(...(result.mappings || []));
+      } catch (e) {
+        logger.warn(`Sheet "${sheet.name}" mapping failed: ${e.message}`);
+      }
+    }
+
+    const primaryClass = Object.values(sheetPrimaryClasses)[0] || null;
+    const primaryClassObj = primaryClass ? (ontology?.classes || []).find(c => c.iri === primaryClass) : null;
+    return {
+      primaryClass,
+      primaryClassLabel: primaryClassObj?.label || primaryClassObj?.localName || '',
+      primaryClassExplanation: 'Per-sheet fallback analysis',
+      mappings: allMappings,
+      sheetPrimaryClasses
+    };
+  }
+
+  /**
+   * Normalize multi-sheet LLM output into the standard mapping format
+   */
+  _normalizeMultiSheetMapping(result, ontology, sheets, headers) {
+    const classes = ontology?.classes || [];
+    const allProps = ontology?.properties || [];
+    const allObjProps = ontology?.objectProperties || allProps.filter(p => p.type === 'objectProperty');
+    const allDataProps = ontology?.dataProperties || allProps.filter(p => p.type === 'datatypeProperty');
+    const sheetMappings = result.sheetMappings || {};
+
+    const sheetPrimaryClasses = {};
+    const allMappings = [];
+
+    for (const sheet of sheets) {
+      const sheetData = sheetMappings[sheet.name];
+      if (!sheetData) continue;
+
+      // Resolve sheet class
+      const sheetClassLabel = sheetData.sheetClass || '';
+      const sheetClass = classes.find(c =>
+        (c.label || c.localName || '').toLowerCase() === sheetClassLabel.toLowerCase() ||
+        (c.localName || '').toLowerCase() === sheetClassLabel.toLowerCase()
+      );
+      if (sheetClass) {
+        sheetPrimaryClasses[sheet.name] = sheetClass.iri;
+      }
+
+      for (const col of (sheetData.columns || [])) {
+        const colName = col.column;
+        const isLiteral = col.isLiteral !== false;
+        const propLabel = col.property || '';
+        const linkedClassLabel = col.linkedClass || '';
+
+        // Resolve property
+        let property = null;
+        if (propLabel) {
+          const propLower = propLabel.toLowerCase();
+          property = allProps.find(p => (p.label || p.localName || '').toLowerCase() === propLower)
+            || allObjProps.find(p => (p.label || p.localName || '').toLowerCase() === propLower)
+            || allDataProps.find(p => (p.label || p.localName || '').toLowerCase() === propLower);
+        }
+
+        // Resolve linked class
+        let linkedClass = null;
+        if (!isLiteral && linkedClassLabel) {
+          const classLower = linkedClassLabel.toLowerCase();
+          linkedClass = classes.find(c =>
+            (c.label || c.localName || '').toLowerCase() === classLower
+          );
+        }
+
+        // If FK detected a class but no property matched, find the object property linking to it
+        if (!isLiteral && linkedClass && !property) {
+          const linkedLabel = (linkedClass.label || linkedClass.localName || '').toLowerCase();
+          property = allObjProps.find(p => {
+            const range = (p.range || p.rangeLabel || '').toLowerCase();
+            const rangeLocal = p.range?.includes('://') ? p.range.split(/[#/]/).pop().toLowerCase() : range;
+            return range === linkedLabel || rangeLocal === linkedLabel;
+          });
+          if (!property) {
+            const hasName = `has${linkedLabel}`;
+            property = allObjProps.find(p => (p.label || p.localName || '').toLowerCase() === hasName);
+          }
+        }
+
+        // Resolve domain for literal properties
+        let domain = '';
+        let domainLabel = '';
+        if (isLiteral && property && property.domain) {
+          const domainLocal = property.domain.includes('://') ? property.domain.split(/[#/]/).pop() : property.domain;
+          const normDomain = domainLocal.toLowerCase().replace(/[\s_-]/g, '');
+          const domainClass = classes.find(c => {
+            const cLabel = (c.label || c.localName || '').toLowerCase().replace(/[\s_-]/g, '');
+            const cLocal = (c.localName || '').toLowerCase().replace(/[\s_-]/g, '');
+            return cLabel === normDomain || cLocal === normDomain;
+          }) || (property.domainLabel ? classes.find(c =>
+            (c.label || '').toLowerCase().replace(/[\s_-]/g, '') === property.domainLabel.toLowerCase().replace(/[\s_-]/g, '')
+          ) : null);
+          if (domainClass) {
+            domain = domainClass.iri;
+            domainLabel = domainClass.label || domainClass.localName || '';
+          }
+        }
+
+        allMappings.push({
+          column: colName,
+          _sheet: sheet.name,
+          isLiteral,
+          property: property?.iri || '',
+          propertyLabel: property?.label || property?.localName || propLabel || colName,
+          propertyIsNew: !property && !!propLabel && (col.propertyIsNew !== false),
+          linkedClass: isLiteral ? '' : (linkedClass?.iri || ''),
+          linkedClassLabel: isLiteral ? '' : (linkedClass?.label || linkedClassLabel),
+          linkedClassIsNew: !isLiteral && !linkedClass && !!linkedClassLabel && (col.linkedClassIsNew !== false),
+          domain,
+          domainLabel,
+          reasoning: col.reasoning || ''
+        });
+      }
+    }
+
+    const primaryClass = Object.values(sheetPrimaryClasses)[0] || null;
+    const primaryClassObj = primaryClass ? classes.find(c => c.iri === primaryClass) : null;
+
+    return {
+      primaryClass,
+      primaryClassLabel: primaryClassObj?.label || primaryClassObj?.localName || '',
+      primaryClassExplanation: 'Multi-sheet holistic analysis',
+      mappings: allMappings,
+      sheetPrimaryClasses,
+      crossSheetRelationships: result.crossSheetRelationships || []
+    };
+  }
+
+  async _analyzeForMappingSingle(headers, sampleRows, ontology, sheetName = null, dataProfile = null) {
     const sampleData = this.buildSampleData(sanitizeHeaders(headers), sanitizeSampleRows(sampleRows));
     
     // Sanitize ontology context and limit size for large ontologies
@@ -356,18 +623,32 @@ Rules:
     const objectProperties = safeOntology.objectProperties.length > 0 ? safeOntology.objectProperties : allProps.filter(p => p.type === 'objectProperty');
     const classes = safeOntology.classes;
     
-    // Run data profiling for smarter context (only include relevant ontology classes)
-    const dataProfile = dataProfileService.profileColumns(headers, sampleRows);
-    const profileHints = Object.values(dataProfile.columns).map(p =>
-      `  - "${p.header}": ${p.type}${p.isId ? ' [PK]' : ''}${p.isFkCandidate ? ' [FK]' : ''}${p.isCategory ? ' [CATEGORY]' : ''}`
-    ).join('\n');
+    // Run data profiling for smarter context
+    const profile = dataProfile || dataProfileService.profileColumns(headers, sampleRows);
+    const profileHints = Object.values(profile.columns).map(p => {
+      const tags = [];
+      if (p.isId) tags.push('PK');
+      if (p.isFkCandidate) tags.push('FK');
+      if (p.isCategory) tags.push('CATEGORY');
+      return `  - "${p.header}": ${p.type}${tags.length ? ' [' + tags.join(',') + ']' : ''} (${p.cardinality} unique${p.sampleValues?.length ? ', samples: ' + p.sampleValues.slice(0, 3).join(', ') : ''})`;
+    }).join('\n');
     
-    // For large ontologies, only include classes relevant to the data
-    // This prevents token overflow
+    // Normalize a name for domain matching
+    const normName = (n) => (n || '').toLowerCase().replace(/[\s_-]/g, '');
+
+    const domainMatchesClass = (prop, cls) => {
+      const cLabel = normName(cls.label);
+      const cLocal = normName(cls.localName);
+      const pDomain = normName(prop.domain);
+      const pDomainLabel = normName(prop.domainLabel);
+      return (pDomain && (pDomain === cLabel || pDomain === cLocal))
+        || (pDomainLabel && (pDomainLabel === cLabel || pDomainLabel === cLocal));
+    };
+
+    // Build class details with properties
     const MAX_CLASSES_IN_PROMPT = 30;
-    let classDetails;
+    let relevantClasses = classes;
     if (classes.length > MAX_CLASSES_IN_PROMPT) {
-      // Score classes by relevance to column names
       const headerWords = new Set(headers.flatMap(h => h.toLowerCase().replace(/[_-]/g, ' ').split(/\s+/)));
       const scoredClasses = classes.map(c => {
         const label = (c.label || c.localName || '').toLowerCase();
@@ -375,90 +656,91 @@ Rules:
         const score = words.filter(w => headerWords.has(w)).length;
         return { ...c, _relevanceScore: score };
       }).sort((a, b) => b._relevanceScore - a._relevanceScore);
-      
-      const relevantClasses = scoredClasses.slice(0, MAX_CLASSES_IN_PROMPT);
+      relevantClasses = scoredClasses.slice(0, MAX_CLASSES_IN_PROMPT);
       logger.info(`🔗 Large ontology (${classes.length} classes), using top ${MAX_CLASSES_IN_PROMPT} relevant classes`);
-      
-      classDetails = relevantClasses.map(c => {
-        const cLabel = c.label || c.localName;
-        const classDataProps = dataProperties
-          .filter(p => (p.domain || p.domainLabel) === cLabel || p.domain === c.localName)
-          .map(p => p.label || p.localName);
-        const classObjProps = objectProperties
-          .filter(p => (p.domain || p.domainLabel) === cLabel || p.domain === c.localName)
-          .map(p => `${p.label || p.localName} → ${p.range || p.rangeLabel || 'Entity'}`);
-        return `${cLabel}: ${c.comment || c.description || 'no description'}
-      Data properties: ${classDataProps.join(', ') || 'none defined'}
-      Object properties: ${classObjProps.join(', ') || 'none defined'}`;
-      }).join('\n  ');
-    } else {
-      classDetails = classes.map(c => {
-        const cLabel = c.label || c.localName;
-        const classDataProps = dataProperties
-          .filter(p => (p.domain || p.domainLabel) === cLabel || p.domain === c.localName)
-          .map(p => p.label || p.localName);
-        const classObjProps = objectProperties
-          .filter(p => (p.domain || p.domainLabel) === cLabel || p.domain === c.localName)
-          .map(p => `${p.label || p.localName} → ${p.range || p.rangeLabel || 'Entity'}`);
-        return `${cLabel}: ${c.comment || c.description || 'no description'}
-      Data properties: ${classDataProps.join(', ') || 'none defined'}
-      Object properties: ${classObjProps.join(', ') || 'none defined'}`;
-      }).join('\n  ');
     }
 
-    const objPropsStr = objectProperties.map(p => `${p.label || p.localName}: ${p.domain || 'any'} → ${p.range || 'Entity'}`).join('\n  - ') || 'None';
-    const dataPropsStr = dataProperties.map(p => `${p.label || p.localName} (domain: ${p.domain || 'any'}, range: ${p.range || 'xsd:string'})`).join('\n  - ') || 'None';
+    const classDetails = relevantClasses.map(c => {
+      const classDataProps = dataProperties
+        .filter(p => domainMatchesClass(p, c))
+        .map(p => `${p.label || p.localName} (${p.range || 'string'})`);
+      const classObjProps = objectProperties
+        .filter(p => domainMatchesClass(p, c))
+        .map(p => `${p.label || p.localName} → ${p.rangeLabel || p.range || 'Entity'}`);
+      return `${c.label || c.localName}: ${c.comment || c.description || 'no description'}
+      Data properties: ${classDataProps.join(', ') || 'none defined'}
+      Object properties: ${classObjProps.join(', ') || 'none defined'}`;
+    }).join('\n  ');
 
-    const systemPrompt = `You are mapping CSV columns to an EXISTING ontology. You must use the provided classes and properties.
+    const objPropsStr = objectProperties.map(p => `${p.label || p.localName}: ${p.domainLabel || p.domain || 'any'} → ${p.rangeLabel || p.range || 'Entity'}`).join('\n  - ') || 'None';
+    const dataPropsStr = dataProperties.map(p => `${p.label || p.localName} (domain: ${p.domainLabel || p.domain || 'any'}, range: ${p.range === 'Literal' ? 'string' : (p.range || 'xsd:string')})`).join('\n  - ') || 'None';
+
+    const systemPrompt = `You are mapping CSV columns to an EXISTING ontology for knowledge graph construction. You must use the provided classes and properties.
 
 AVAILABLE ONTOLOGY:
 
 CLASSES (with their properties):
   ${classDetails || 'No classes defined'}
 
-ALL OBJECT PROPERTIES (create linked nodes):
+ALL OBJECT PROPERTIES (create relationships between entities):
   - ${objPropsStr}
 
-ALL DATA PROPERTIES (literal values):
+ALL DATA PROPERTIES (literal values on entities):
   - ${dataPropsStr}
 
 DATA PROFILING (pre-computed column analysis):
 ${profileHints}
 
 TASK:
-1. FIRST: Identify which class best represents EACH ROW of this CSV (primaryClass)
-2. THEN: For each column, map to properties that have the primaryClass as their DOMAIN
-3. For columns like "Company", "Product" that reference OTHER entities → use OBJECT PROPERTY with linkedClass
+1. Identify which ontology class best represents EACH ROW of this CSV (primaryClass)
+2. For each column, determine: literal data property OR foreign key to another entity?
+3. Map each column to the correct ontology property
+
+RELATIONSHIP DETECTION RULES:
+- A column is a FOREIGN KEY (isLiteral=false) when:
+  • Column name ends in "ID"/"Id"/"_id" and matches a class name (e.g., "CustomerID" → Customer class)
+  • Column contains references to entities of another class (e.g., "approved_by" with person names → Employee class)
+  • Column has low cardinality categorical values that should be separate nodes (e.g., "Segment" with "Retail","Corporate" → if Segment class exists)
+  • Data profiling marks it as [FK] or [CATEGORY] with a matching class
+- A column is a LITERAL (isLiteral=true) when:
+  • Dates, timestamps, datetime values → ALWAYS literal
+  • Numeric values: amounts, scores, counts, percentages, ages → ALWAYS literal
+  • Free-text: names, descriptions, addresses, emails, phones, URLs → ALWAYS literal
+  • Hashes, fingerprints, boolean flags → ALWAYS literal
+  • The column is the PRIMARY KEY of this sheet → ALWAYS literal in this sheet
+- SELF-REFERENTIAL: A column like "ManagerID" on an "Employees" sheet references the same class → still a foreign key (Employee → Employee)
+
+PROPERTY SELECTION RULES:
+- For foreign keys: use the OBJECT PROPERTY whose domain=primaryClass and range=targetClass
+- If multiple object properties link to the same target, pick the one whose name best matches the column semantics
+- For literals: use the DATA PROPERTY whose domain=primaryClass and name matches the column
+- Use EXACT property labels from the ontology — do NOT rename them
+- Only set propertyIsNew=true if absolutely NO existing property matches
 
 Output ONLY valid JSON:
 {
-  "primaryClass": "The class name that each CSV row represents",
-  "primaryClassExplanation": "Why this class was chosen based on the data",
+  "primaryClass": "The ontology class label that each CSV row represents",
+  "primaryClassExplanation": "Why this class was chosen",
   "mappings": [
     {
       "column": "column_name",
       "isLiteral": true/false,
-      "property": "property name (MUST have primaryClass as domain, or be new)",
+      "property": "exact ontology property label (MUST exist or be marked new)",
       "propertyIsNew": true/false,
-      "linkedClass": "target class name if object property (or empty string)",
+      "linkedClass": "target class label if foreign key (empty string if literal)",
       "linkedClassIsNew": true/false,
-      "reasoning": "Why this mapping - mention domain compatibility"
+      "reasoning": "brief explanation of why this mapping"
     }
   ]
 }
 
-CRITICAL RULES:
-- primaryClass MUST be chosen FIRST based on what each row represents
-- For columns ending in "_id" or "Id" that match an ontology class name (e.g., "device_id" → Device, "card_id" → Card): set isLiteral=false and linkedClass to that class. Use the EXISTING object property that links primaryClass to that class (e.g., "hasDevice", "hasCard").
-- For literal data columns (names, dates, amounts, scores, hashes, booleans): set isLiteral=true and map to the EXISTING data property with matching name
-- Date/time columns → ALWAYS isLiteral=true
-- Numeric columns (amounts, scores, counts, ages) → ALWAYS isLiteral=true
-- Hash/fingerprint columns → ALWAYS isLiteral=true
-- Prefer EXISTING properties/classes over creating new ones — only set propertyIsNew=true if NO existing property matches
-- When mapping to an existing property, use its EXACT label (e.g., "emailHash" not "email_hash", "signupDate" not "signup_date")
-- The "property" field must be the ontology property label, not the CSV column name`;
+CRITICAL:
+- Every column MUST appear in mappings
+- primaryClass MUST be an existing ontology class label
+- Property labels must EXACTLY match ontology labels (case-sensitive)
+- Do NOT map date/numeric columns as foreign keys`;
 
-    const sheetContext = sheetName ? `\nSHEET NAME: "${sanitizeValue(sheetName, 100)}" — each row in this sheet represents one entity of this type.\n` : '';
+    const sheetContext = sheetName ? `\nSHEET NAME: "${sanitizeValue(sheetName, 100)}" — each row represents one entity of this type.\n` : '';
     const userPrompt = `Map these CSV columns to the ontology:
 ${sheetContext}
 COLUMNS: ${sanitizeHeaders(headers).join(', ')}
@@ -470,13 +752,13 @@ Remember: primaryClass must be one of the available ontology classes.${sheetName
 Output only JSON.`;
 
     try {
-      console.log(`\n🔗 LLM analyzing CSV for mapping: ${headers.length} columns`);
+      console.log(`\n🔗 LLM analyzing CSV for mapping: ${headers.length} columns${sheetName ? ` (sheet: ${sheetName})` : ''}`);
       const startTime = Date.now();
 
       const content = await this._chat([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
-      ], { maxTokens: 4000 });
+      ], { maxTokens: 8000 });
 
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
       console.log(`✅ Mapping analysis complete in ${duration}s`);
@@ -485,18 +767,15 @@ Output only JSON.`;
       try {
         result = JSON.parse(this.extractJSON(content));
       } catch (e) {
-        // Try to salvage partial JSON — find last complete mapping entry
         console.warn(`⚠️ Mapping JSON incomplete, attempting partial recovery`);
         const partial = content.replace(/```json?\n?/g, '').replace(/```/g, '');
         const lastBracket = partial.lastIndexOf('}');
         if (lastBracket > 0) {
-          // Close the mappings array and outer object
           let fixed = partial.substring(0, lastBracket + 1);
           if (!fixed.includes(']}')) fixed += ']}';
           try { result = JSON.parse(fixed); } catch (_) {}
         }
         if (!result) {
-          // Fallback: return identity mappings
           result = { primaryClass: classes[0]?.label || 'Record', mappings: headers.map(h => ({ column: h, isLiteral: true, property: h, propertyIsNew: true, linkedClass: '', linkedClassIsNew: false })) };
         }
       }
@@ -608,14 +887,26 @@ Output only JSON.`;
       let domainLabel = '';
       if (isLiteral && property && property.domain) {
         const propDomain = property.domain;
+        const propDomainLabel = property.domainLabel;
         const domainIri = propDomain.includes('://') ? propDomain : null;
         const domainLocal = propDomain.includes('://') ? propDomain.split(/[#/]/).pop() : propDomain;
+        // Normalize for matching: strip spaces/underscores, lowercase
+        const normDomain = domainLocal.toLowerCase().replace(/[\s_-]/g, '');
         const domainClass = domainIri
           ? classes.find(c => c.iri === domainIri)
-          : classes.find(c => (c.label || c.localName || '').toLowerCase() === domainLocal.toLowerCase());
-        if (domainClass) {
-          domain = domainClass.iri;
-          domainLabel = domainClass.label || domainClass.localName || '';
+          : classes.find(c => {
+              const cLabel = (c.label || c.localName || '').toLowerCase().replace(/[\s_-]/g, '');
+              const cLocal = (c.localName || '').toLowerCase().replace(/[\s_-]/g, '');
+              return cLabel === normDomain || cLocal === normDomain;
+            });
+        // Also try matching via domainLabel from getOntologyStructure
+        const resolvedClass = domainClass || (propDomainLabel ? classes.find(c => {
+          const cLabel = (c.label || c.localName || '').toLowerCase().replace(/[\s_-]/g, '');
+          return cLabel === propDomainLabel.toLowerCase().replace(/[\s_-]/g, '');
+        }) : null);
+        if (resolvedClass) {
+          domain = resolvedClass.iri;
+          domainLabel = resolvedClass.label || resolvedClass.localName || '';
         }
       }
 

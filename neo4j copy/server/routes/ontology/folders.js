@@ -21,22 +21,37 @@ router.get('/', optionalTenantContext, async (req, res) => {
     
     const session = neo4jService.getSession();
     try {
-      // Build query with optional workspace filter
-      // Note: Folder relationship is (f)-[:CONTAINS]->(d)
+      // Get folders from Neo4j
       let query = `
         MATCH (f:Folder)
         ${workspaceId ? 'WHERE f.workspace_id = $workspaceId OR f.workspace_id IS NULL' : ''}
-        OPTIONAL MATCH (f)-[:CONTAINS]->(d:Document)
-        WITH f, count(d) as docCount
-        RETURN f, docCount ORDER BY f.name
+        RETURN f ORDER BY f.name
       `;
       
       const result = await session.run(query, { workspaceId: workspaceId || null });
       
       const folders = result.records.map(r => ({
         ...r.get('f').properties,
-        docCount: neo4jService.toNumber(r.get('docCount'))
+        docCount: 0
       }));
+
+      // Count documents per folder from Redis (source of truth)
+      if (workspaceId) {
+        const redisService = require('../../services/redisService');
+        const docIds = await redisService.sMembers(`workspace:${workspaceId}:docs`);
+        const folderCounts = {};
+        for (const docId of docIds) {
+          const docJson = await redisService.get(`doc:${docId}`);
+          if (docJson) {
+            const doc = JSON.parse(docJson);
+            const fId = doc.folder_id;
+            if (fId) folderCounts[fId] = (folderCounts[fId] || 0) + 1;
+          }
+        }
+        for (const f of folders) {
+          f.docCount = folderCounts[f.folder_id] || 0;
+        }
+      }
       
       res.json({ success: true, folders });
     } finally {

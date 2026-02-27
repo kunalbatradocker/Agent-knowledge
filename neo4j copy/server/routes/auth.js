@@ -141,6 +141,13 @@ router.put('/users/:email', requireAdmin, async (req, res) => {
 router.delete('/users/:email', requireAdmin, async (req, res) => {
   try {
     await authService.deleteUser(req.params.email);
+    // Clean up all memory data for this user
+    try {
+      const memoryService = require('../services/memoryService');
+      await memoryService.clearAllUserData(req.params.email);
+    } catch (e) {
+      console.warn(`⚠️ Memory cleanup on user delete failed: ${e.message}`);
+    }
     res.json({ success: true });
   } catch (error) {
     res.status(error.message.includes('master admin') ? 403 : 500).json({ error: error.message });

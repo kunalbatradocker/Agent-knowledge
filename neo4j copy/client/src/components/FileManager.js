@@ -53,22 +53,14 @@ function FileManager() {
   // Multi-select and folder edit states
   const [selectedDocs, setSelectedDocs] = useState(new Set());
   const [editingFolder, setEditingFolder] = useState(null);
-  const [bulkGenerating, setBulkGenerating] = useState(false);
-  
-  // Review/Preview states
-  const [showReview, setShowReview] = useState(false);
-  const [reviewData, setReviewData] = useState(null);
-  const [reviewLoading, setReviewLoading] = useState(false);
-  
+
   // Schema analysis states
   const [showSchemaAnalysis, setShowSchemaAnalysis] = useState(false);
   const [schemaAnalysis, setSchemaAnalysis] = useState(null);
   const [analyzingSchema, setAnalyzingSchema] = useState(false);
   
-  // Processing jobs panel
+  // Processing jobs (kept for schema analysis job tracking)
   const [jobs, setJobs] = useState([]);
-  const [jobsLoading, setJobsLoading] = useState(false);
-  const [showProcessingPanel, setShowProcessingPanel] = useState(true);
   const [selectedStagedDocId, setSelectedStagedDocId] = useState(null);
   const [showStagedReview, setShowStagedReview] = useState(false);
   const [sheetViewerDoc, setSheetViewerDoc] = useState(null);
@@ -248,7 +240,7 @@ function FileManager() {
     }
   };
 
-  // Delete job
+  // Delete job (used by schema analysis)
   const deleteJob = async (jobId) => {
     try {
       const response = await fetch(`${API_BASE_URL}/ontology/jobs/${jobId}`, {
@@ -263,21 +255,7 @@ function FileManager() {
     }
   };
 
-  // Clear all completed/failed jobs
-  const clearCompletedJobs = async () => {
-    const toDelete = jobs.filter(j => ['committed', 'failed', 'cancelled'].includes(j.status));
-    for (const job of toDelete) {
-      try {
-        await fetch(`${API_BASE_URL}/ontology/jobs/${job.job_id}`, {
-          method: 'DELETE',
-          headers: getTenantHeaders()
-        });
-      } catch (e) { /* ignore */ }
-    }
-    loadJobs();
-  };
-
-  // Load staged documents (pending commit) — workspace-scoped
+  // Load staged documents (pending enrichment) — workspace-scoped
   const loadStagedDocuments = async () => {
     try {
       const wsId = currentWorkspace?.workspace_id;
@@ -948,180 +926,39 @@ function FileManager() {
     }
   };
 
-  // ── Extraction Wizard state ──
-  const [showExtractionWizard, setShowExtractionWizard] = useState(false);
-  const [wizardDocId, setWizardDocId] = useState(null);
 
-  // Open extraction wizard for a document
-  const generateGraphForDocument = (docId) => {
-    setWizardDocId(docId);
-    setShowExtractionWizard(true);
-  };
-
-  // Called when extraction wizard completes (either extraction started or ontology saved)
-  const onExtractionWizardDone = () => {
-    setShowExtractionWizard(false);
-    setWizardDocId(null);
-    loadDocuments();
-    loadJobs();
-    loadOntologies();
-    if (wizardDocId) loadDocumentDetails(wizardDocId);
-  };
-
-  // Preview extraction for review before saving
-  const previewExtraction = async (docId) => {
-    setReviewLoading(true);
-    try {
-      const doc = documents.find(d => d.doc_id === docId);
-      const folderOntologyId = doc?.folderId ? getFolderOntology(doc.folderId) : null;
-      const ontology = folderOntologyId ? getOntologyById(folderOntologyId) : null;
-      
-      const entityTypes = ontology?.nodeTypes || ontology?.conceptTypes || 
-        (ontology?.entityTypes || []).map(et => et.userLabel || et.label).filter(Boolean);
-      const predicates = ontology?.predicates || 
-        (ontology?.relationships || []).map(r => r.type || r.predicate).filter(Boolean);
-      const industry = ontology ? (ontology.name || ontology.domain || ontology.id) : null;
-      
-      const response = await fetch(`${API_BASE_URL}/ontology/documents/${docId}/preview-extraction`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getTenantHeaders() },
-        body: JSON.stringify({
-          ontologyId: ontology?.id,
-          entityTypes,
-          predicates,
-          industry
-        })
-      });
-      
-      const result = await response.json();
-      if (response.ok) {
-        setReviewData(result);
-        setShowReview(true);
-      } else {
-        alert(`❌ ${result.error}`);
-      }
-    } catch (error) {
-      alert(`❌ ${error.message}`);
-    } finally {
-      setReviewLoading(false);
-    }
-  };
-
-  // Approve reviewed extraction
-  const approveExtraction = async (reviewedConcepts, reviewedRelations, updateOntology, newTypes = [], newPredicates = []) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/ontology/documents/${reviewData.document.doc_id}/approve-extraction`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getTenantHeaders() },
-        body: JSON.stringify({
-          previewId: reviewData.previewId,
-          concepts: reviewedConcepts,
-          relations: reviewedRelations,
-          updateOntology,
-          ontologyId: reviewData.ontology?.id,
-          newTypes,
-          newPredicates
-        })
-      });
-      
-      const result = await response.json();
-      if (response.ok) {
-        alert(`✅ Saved ${result.conceptsCreated} concepts, ${result.relationsCreated} relations`);
-        setShowReview(false);
-        setReviewData(null);
-        loadDocumentDetails(reviewData.document.doc_id);
-        loadDocuments();
-        loadOntologies(); // Refresh ontologies if updated
-      } else {
-        alert(`❌ ${result.error}`);
-      }
-    } catch (error) {
-      alert(`❌ ${error.message}`);
-    }
-  };
-
-  // Bulk generate graph for selected documents
-  const bulkGenerateGraph = async () => {
+  // Bulk generate graph for selected documents — schema analysis only (no ontology)
+  const bulkAnalyzeSchema = async () => {
     if (selectedDocs.size === 0) {
       alert('Select documents first');
       return;
     }
     
-    // Check if folder has an ontology assigned
-    const folderOntologyId = getFolderOntology(selectedFolder);
+    if (!window.confirm(`Analyze ${selectedDocs.size} document(s) to suggest an ontology schema?\n\nThis will run in the background. Check the Jobs page for results.`)) return;
     
-    if (!folderOntologyId) {
-      // No ontology - analyze documents to suggest schema (background job)
-      if (!window.confirm(`Analyze ${selectedDocs.size} document(s) to suggest an ontology schema?\n\nThis will run in the background. Check "Processing Jobs" for results.`)) return;
-      
-      setAnalyzingSchema(true);
-      try {
-        const response = await fetch(`${API_BASE_URL}/ontology/documents/analyze-for-schema`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...getTenantHeaders() },
-          body: JSON.stringify({
-            docIds: Array.from(selectedDocs),
-            industry: 'general',
-            workspace_id: currentWorkspace?.workspace_id || ''
-          })
-        });
-        
-        const result = await response.json();
-        if (response.ok && result.jobId) {
-          alert(`✅ Schema analysis started!\n\nJob ID: ${result.jobId}\n\nGo to "Processing Jobs" to monitor progress and review the suggested schema.`);
-          setSelectedDocs(new Set());
-        } else {
-          alert(`❌ ${result.error || 'Failed to start analysis'}`);
-        }
-      } catch (error) {
-        alert(`❌ ${error.message}`);
-      } finally {
-        setAnalyzingSchema(false);
-      }
-      return;
-    }
-    
-    // Has ontology - extract entities using it
-    if (!window.confirm(`Generate knowledge graph for ${selectedDocs.size} document(s) using the assigned ontology?`)) return;
-    
-    setBulkGenerating(true);
+    setAnalyzingSchema(true);
     try {
-      const ontology = getOntologyById(folderOntologyId);
-      
-      // Extract entity types from ontology (handle different formats)
-      const entityTypes = ontology?.nodeTypes || ontology?.conceptTypes || 
-        (ontology?.entityTypes || []).map(et => et.userLabel || et.label).filter(Boolean);
-      const predicates = ontology?.predicates || 
-        (ontology?.relationships || []).map(r => r.type || r.predicate).filter(Boolean);
-      // Use ontology name as industry
-      const industry = ontology ? (ontology.name || ontology.domain || ontology.id) : null;
-      
-      console.log('Using ontology:', ontology?.name, 'Industry:', industry, 'Entity types:', entityTypes, 'Predicates:', predicates);
-      
-      const response = await fetch(`${API_BASE_URL}/ontology/documents/bulk-generate-graph`, {
+      const response = await fetch(`${API_BASE_URL}/ontology/documents/analyze-for-schema`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getTenantHeaders() },
         body: JSON.stringify({
           docIds: Array.from(selectedDocs),
-          ontologyId: ontology?.id,
-          entityTypes,
-          predicates,
-          industry
+          industry: 'general',
+          workspace_id: currentWorkspace?.workspace_id || ''
         })
       });
       
       const result = await response.json();
-      if (response.ok) {
-        alert(`✅ Generated ${result.totalConcepts || 0} concepts, ${result.totalRelations || 0} relations for ${result.results?.filter(r => r.status === 'success').length || 0} documents`);
+      if (response.ok && result.jobId) {
+        alert(`✅ Schema analysis started!\n\nJob ID: ${result.jobId}\n\nCheck the Jobs page to monitor progress and review the suggested schema.`);
         setSelectedDocs(new Set());
-        loadDocuments();
       } else {
-        alert(`❌ ${result.error}`);
+        alert(`❌ ${result.error || 'Failed to start analysis'}`);
       }
     } catch (error) {
       alert(`❌ ${error.message}`);
     } finally {
-      setBulkGenerating(false);
+      setAnalyzingSchema(false);
     }
   };
 
@@ -1426,13 +1263,11 @@ function FileManager() {
             <>
               <button 
                 className="btn-bulk" 
-                onClick={bulkGenerateGraph} 
-                disabled={bulkGenerating || analyzingSchema}
-                title={getFolderOntology(selectedFolder) 
-                  ? `Extract entities using assigned ontology` 
-                  : `Analyze documents to suggest schema`}
+                onClick={bulkAnalyzeSchema} 
+                disabled={analyzingSchema}
+                title="Analyze documents to suggest an ontology schema"
               >
-                {bulkGenerating || analyzingSchema ? '⏳' : '🧠'} {getFolderOntology(selectedFolder) ? 'Extract' : 'Analyze'} ({selectedDocs.size})
+                {analyzingSchema ? '⏳' : '🔍'} Analyze ({selectedDocs.size})
               </button>
               <button 
                 className="btn-icon" 
@@ -1449,48 +1284,6 @@ function FileManager() {
         </div>
       </div>
 
-      {/* Show folder ontology info when documents are selected */}
-      {selectedDocs.size > 0 && (
-        <div className="fm-selection-info">
-          <span className="selection-count">📄 {selectedDocs.size} selected</span>
-          <div className="selection-ontology-details">
-            {(() => {
-              const folderOntologyId = getFolderOntology(selectedFolder);
-              const ontology = folderOntologyId ? getOntologyById(folderOntologyId) : null;
-              
-              if (ontology) {
-                // Extract entity types from ontology
-                const entityTypes = ontology.nodeTypes || ontology.conceptTypes || 
-                  (ontology.entityTypes || []).map(et => et.userLabel || et.label).filter(Boolean);
-                const predicates = ontology.predicates || 
-                  (ontology.relationships || []).map(r => r.type || r.predicate).filter(Boolean);
-                
-                return (
-                  <div className="ontology-info">
-                    <div className="ontology-name">🏷️ <strong>{ontology.name || ontology.id}</strong></div>
-                    {entityTypes.length > 0 && (
-                      <div className="ontology-types">
-                        <span className="label">Entity Types:</span> 
-                        <span className="values">{entityTypes.slice(0, 5).join(', ')}{entityTypes.length > 5 ? ` +${entityTypes.length - 5} more` : ''}</span>
-                      </div>
-                    )}
-                    {predicates.length > 0 && (
-                      <div className="ontology-predicates">
-                        <span className="label">Relations:</span> 
-                        <span className="values">{predicates.slice(0, 5).join(', ')}{predicates.length > 5 ? ` +${predicates.length - 5} more` : ''}</span>
-                      </div>
-                    )}
-                    {entityTypes.length === 0 && predicates.length === 0 && (
-                      <div className="ontology-warning">⚠️ Ontology has no entity types defined</div>
-                    )}
-                  </div>
-                );
-              }
-              return <span className="no-ontology">⚠️ No ontology assigned to folder - LLM will auto-detect entity types</span>;
-            })()}
-          </div>
-        </div>
-      )}
 
       <div className="fm-search">
         <span>🔍</span>
@@ -1503,74 +1296,6 @@ function FileManager() {
       </div>
 
       <div className="fm-content">
-        {/* Processing Panel - Inline Jobs */}
-        {(jobs.length > 0 || stagedDocuments.length > 0) && (
-          <div className={`fm-processing-panel ${showProcessingPanel ? 'expanded' : 'collapsed'}`}>
-            <div className="processing-header" onClick={() => setShowProcessingPanel(!showProcessingPanel)}>
-              <span className="processing-title">
-                ⚙️ Processing ({jobs.filter(j => !['committed', 'cancelled'].includes(j.status) && !(j.staged && j.status === 'completed')).length + stagedDocuments.length})
-              </span>
-              <span className="processing-toggle">{showProcessingPanel ? '▼' : '▶'}</span>
-            </div>
-            {showProcessingPanel && (
-              <div className="processing-list">
-                {/* Staged documents ready for review */}
-                {stagedDocuments.map(staged => (
-                  <div key={staged.docId} className="processing-item staged">
-                    <span className="item-icon">📄</span>
-                    <span className="item-name">{staged.title || staged.fileName || staged.docId}</span>
-                    <span className="item-status ready">Ready</span>
-                    <button className="btn-sm btn-primary" onClick={() => { setSelectedStagedDocId(staged.docId); setShowStagedReview(true); }}>
-                      Review
-                    </button>
-                    {canDelete && <button className="btn-sm btn-delete" onClick={() => deleteStagedDocument(staged.docId)} title="Delete">
-                      🗑️
-                    </button>}
-                  </div>
-                ))}
-                {/* Active jobs (exclude completed+staged since they show in staged docs) */}
-                {jobs.filter(j => !['committed', 'cancelled'].includes(j.status) && !(j.staged && j.status === 'completed')).map(job => (
-                  <div key={job.job_id} className={`processing-item ${job.status}`}>
-                    <span className="item-icon">{job.job_type === 'upload' ? '📤' : job.job_type === 'commit' ? '💾' : '🔍'}</span>
-                    <span className="item-name">{job.document_title || job.file_name || job.job_id.slice(0, 8)}</span>
-                    <span className={`item-status ${job.status}`}>
-                      {job.status === 'processing' ? `${job.progress || 0}%` : job.status}
-                    </span>
-                    {job.status === 'completed' && job.job_type === 'upload' && (
-                      <button className="btn-sm btn-primary" onClick={() => { setSelectedStagedDocId(job.document_id); setShowStagedReview(true); }}>
-                        Review
-                      </button>
-                    )}
-                    {job.status === 'completed' && job.job_type === 'schema_analysis' && (
-                      <button className="btn-sm btn-primary" onClick={() => reviewSchemaJob(job)}>
-                        Review Schema
-                      </button>
-                    )}
-                    <button className="btn-sm btn-delete" onClick={() => deleteJob(job.job_id)} title="Delete">🗑️</button>
-                  </div>
-                ))}
-                {/* Recently committed */}
-                {jobs.filter(j => j.status === 'committed').slice(0, 3).map(job => (
-                  <div key={job.job_id} className="processing-item committed">
-                    <span className="item-icon">✅</span>
-                    <span className="item-name">{job.document_title || job.job_id.slice(0, 8)}</span>
-                    <span className="item-status committed">Done</span>
-                    <button className="btn-sm btn-delete" onClick={() => deleteJob(job.job_id)} title="Clear">✕</button>
-                  </div>
-                ))}
-                {/* Clear all button */}
-                {jobs.length > 0 && (
-                  <div className="processing-actions">
-                    <button className="btn-sm btn-clear-all" onClick={clearCompletedJobs}>
-                      Clear completed
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
         {/* File Tree */}
         <div className="fm-split">
         <div className="fm-tree">
@@ -1607,10 +1332,14 @@ function FileManager() {
                         />
                         <span className="file-icon">{getDocIcon(doc.doc_type)}</span>
                         <span className="file-name">{doc.title || 'Untitled'}</span>
+                        {doc.status === 'enriched' && <span className="file-badge enriched" title="Knowledge Graph enriched">🧠</span>}
                         {isTabularType(doc.doc_type) && (
                           <button className="btn-tiny" title="View spreadsheet" onClick={(e) => { e.stopPropagation(); setSheetViewerDoc(doc); }}>👁️</button>
                         )}
-                        <span className="file-meta">{doc.entity_count || 0}</span>
+                        {doc.status !== 'enriched' && (
+                          <button className="btn-tiny btn-enrich" title="KG Enrich" onClick={(e) => { e.stopPropagation(); setSelectedStagedDocId(doc.doc_id); setShowStagedReview(true); }}>🧠</button>
+                        )}
+                        <span className="file-meta">{doc.chunks_stored || 0} chunks{doc.entity_count > 0 ? ` · ${doc.entity_count} entities` : ''}</span>
                       </div>
                     ))}
                   </div>
@@ -1672,10 +1401,14 @@ function FileManager() {
                           />
                           <span className="file-icon">{getDocIcon(doc.doc_type)}</span>
                           <span className="file-name">{doc.title || 'Untitled'}</span>
+                          {doc.status === 'enriched' && <span className="file-badge enriched" title="Knowledge Graph enriched">🧠</span>}
                           {isTabularType(doc.doc_type) && (
                             <button className="btn-tiny" title="View spreadsheet" onClick={(e) => { e.stopPropagation(); setSheetViewerDoc(doc); }}>👁️</button>
                           )}
-                          <span className="file-meta">{doc.entity_count || 0}</span>
+                          {doc.status !== 'enriched' && (
+                            <button className="btn-tiny btn-enrich" title="KG Enrich" onClick={(e) => { e.stopPropagation(); setSelectedStagedDocId(doc.doc_id); setShowStagedReview(true); }}>🧠</button>
+                          )}
+                          <span className="file-meta">{doc.chunks_stored || 0} chunks{doc.entity_count > 0 ? ` · ${doc.entity_count} entities` : ''}</span>
                         </div>
                       ))}
                       {getDocumentsInFolder(folder.folder_id).length === 0 && (
@@ -1709,14 +1442,6 @@ function FileManager() {
                 <div className="doc-title-row">
                   <h3>{getDocIcon(documentDetails.document?.doc_type)} {documentDetails.document?.title}</h3>
                   <div className="doc-actions">
-                    <button 
-                      className="btn-generate" 
-                      onClick={() => generateGraphForDocument(documentDetails.document?.doc_id)}
-                      disabled={detailsLoading || analyzingSchema || !canUpload}
-                      title={canUpload ? "Extract entities using guided wizard" : "Member role required"}
-                    >
-                      🧠 Extract
-                    </button>
                     <button className="btn-sm" onClick={() => setSheetViewerDoc(documentDetails.document)} title="Open spreadsheet view of entity data">
                       📊 Sheet
                     </button>
@@ -1726,11 +1451,21 @@ function FileManager() {
                 <div className="doc-badges">
                   <span className="badge">{documentDetails.document?.doc_type?.toUpperCase()}</span>
                   <span className="badge secondary">{formatDate(documentDetails.document?.created_at)}</span>
+                  {selectedDocument?.status === 'enriched' ? (
+                    <span className="badge enriched">🧠 Knowledge Graph</span>
+                  ) : (
+                    <>
+                      <span className="badge uploaded">📦 RAG Ready</span>
+                      <button className="btn-sm btn-enrich" onClick={() => { setSelectedStagedDocId(selectedDocument.doc_id); setShowStagedReview(true); }}>
+                          🧠 Enrich
+                        </button>
+                    </>
+                  )}
                 </div>
               </div>
 
               <div className="doc-stats">
-                <div className="stat"><strong>{documentDetails.stats?.chunkCount || 0}</strong> {isTabularType(documentDetails.document?.doc_type) ? 'Rows' : 'Chunks'}</div>
+                <div className="stat"><strong>{documentDetails.stats?.chunkCount || 0}</strong> Chunks</div>
                 <div className="stat"><strong>{documentDetails.stats?.conceptCount || 0}</strong> Entities</div>
                 <div className="stat"><strong>{documentDetails.stats?.relationCount || 0}</strong> Relations</div>
                 {documentDetails.document?.chunks_stored > 0 && (
@@ -1745,19 +1480,9 @@ function FileManager() {
               )}
 
               <div className="doc-tabs">
-                {isTabularType(documentDetails.document?.doc_type) ? (
-                  <>
-                    <button className={`tab ${activeTab === 'data' ? 'active' : ''}`} onClick={() => setActiveTab('data')}>
-                      Data
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <button className={`tab ${activeTab === 'chunks' ? 'active' : ''}`} onClick={() => setActiveTab('chunks')}>
-                      Chunks ({documentDetails.stats?.chunkCount || 0})
-                    </button>
-                  </>
-                )}
+                <button className={`tab ${activeTab === 'chunks' ? 'active' : ''}`} onClick={() => setActiveTab('chunks')}>
+                  Chunks ({documentDetails.stats?.chunkCount || 0})
+                </button>
                 <button className={`tab ${activeTab === 'entities' ? 'active' : ''}`} onClick={() => setActiveTab('entities')}>
                   Entities ({documentDetails.stats?.conceptCount || 0})
                 </button>
@@ -1775,12 +1500,7 @@ function FileManager() {
               </div>
 
               <div className="tab-content">
-                {/* CSV Data Tab */}
-                {activeTab === 'data' && isTabularType(documentDetails.document?.doc_type) && (
-                  <CSVDataView docUri={documentDetails.document?.uri} />
-                )}
-
-                {/* Chunks Tab (PDF/Text) */}
+                {/* Chunks Tab */}
                 {activeTab === 'chunks' && (
                   <div className="chunks-list">
                     {documentDetails.chunks?.map((chunk, idx) => (
@@ -1910,7 +1630,7 @@ function FileManager() {
                       <div className="empty-tab">No entities match your search/filter across all data</div>
                     )}
                     {concepts.length === 0 && !entitySearch && !entityTypeFilter && (
-                      <div className="empty-tab">No entities extracted yet. Use "Extract" or "Analyze" to find entities.</div>
+                      <div className="empty-tab">No entities yet. Entities are extracted during the document commit flow.</div>
                     )}
                     {documentDetails?.pagination?.entities && concepts.length > 0 && (
                       <div className="pagination-controls">
@@ -2016,7 +1736,7 @@ function FileManager() {
                       <div className="empty-tab">No relations match your search/filter across all data</div>
                     )}
                     {relations.length === 0 && !relationSearch && !relationPredicateFilter && (
-                      <div className="empty-tab">No relations found. Extract entities first to discover relationships.</div>
+                      <div className="empty-tab">No relations found yet. Relations are discovered during the document commit flow.</div>
                     )}
                     {documentDetails?.pagination?.relations && relations.length > 0 && (
                       <div className="pagination-controls">
@@ -2246,13 +1966,6 @@ function FileManager() {
         />
       )}
 
-      {showReview && reviewData && (
-        <ReviewModal
-          data={reviewData}
-          onApprove={approveExtraction}
-          onClose={() => { setShowReview(false); setReviewData(null); }}
-        />
-      )}
 
       {showSchemaAnalysis && schemaAnalysis && (
         <SchemaAnalysisModal
@@ -2307,7 +2020,7 @@ function FileManager() {
         <StagedDocumentReview
           docId={selectedStagedDocId}
           onClose={() => { setShowStagedReview(false); setSelectedStagedDocId(null); }}
-          onCommitted={() => { 
+          onCommit={() => { 
             setShowStagedReview(false); 
             setSelectedStagedDocId(null); 
             loadDocuments(); 
@@ -2317,21 +2030,6 @@ function FileManager() {
         />
       )}
 
-      {showExtractionWizard && wizardDocId && (
-        <ExtractionWizardModal
-          docId={wizardDocId}
-          documents={documents}
-          folders={folders}
-          ontologies={ontologies}
-          selectedFolder={selectedFolder}
-          getFolderOntology={getFolderOntology}
-          getOntologyById={getOntologyById}
-          getTenantHeaders={getTenantHeaders}
-          currentWorkspace={currentWorkspace}
-          onDone={onExtractionWizardDone}
-          onClose={() => { setShowExtractionWizard(false); setWizardDocId(null); }}
-        />
-      )}
 
       {sheetViewerDoc && (
         <SheetView
@@ -2397,316 +2095,6 @@ function FileManager() {
   );
 }
 
-// Extraction Wizard - guided flow for Extract/Analyze on committed documents
-function ExtractionWizardModal({
-  docId, documents, folders, ontologies, selectedFolder,
-  getFolderOntology, getOntologyById, getTenantHeaders,
-  currentWorkspace, onDone, onClose
-}) {
-  const doc = documents.find(d => d.doc_id === docId);
-  const folderOntologyId = doc?.folderId ? getFolderOntology(doc.folderId) : getFolderOntology(selectedFolder);
-
-  const [step, setStep] = useState(1); // 1: select ontology, 2: confirm/analyze, 3: extracting
-  const [selectedOntId, setSelectedOntId] = useState(folderOntologyId || '');
-  const [analyzing, setAnalyzing] = useState(false);
-  const [extracting, setExtracting] = useState(false);
-  const [schemaResult, setSchemaResult] = useState(null);
-  const [jobId, setJobId] = useState(null);
-  const [error, setError] = useState(null);
-  const [pollStatus, setPollStatus] = useState(null);
-
-  const selectedOntology = selectedOntId ? getOntologyById(selectedOntId) : null;
-
-  const entityTypes = selectedOntology?.entityTypes || selectedOntology?.nodeTypes || selectedOntology?.conceptTypes || [];
-  const relationships = selectedOntology?.relationships || selectedOntology?.predicates || [];
-
-  // Step 2a: Analyze document to suggest schema (no ontology)
-  const analyzeSchema = async () => {
-    setAnalyzing(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/ontology/documents/analyze-for-schema', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getTenantHeaders() },
-        body: JSON.stringify({
-          docIds: [docId],
-          industry: doc?.industry || 'general',
-          workspace_id: currentWorkspace?.workspace_id || ''
-        })
-      });
-      const data = await res.json();
-      if (res.ok && data.jobId) {
-        setJobId(data.jobId);
-        setPollStatus('pending');
-        pollJob(data.jobId);
-      } else {
-        setError(data.error || 'Failed to start analysis');
-      }
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setAnalyzing(false);
-    }
-  };
-
-  // Poll job until complete
-  const pollJob = (jid) => {
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/ontology/jobs/${jid}`, { headers: getTenantHeaders() });
-        const data = await res.json();
-        if (!data.success) return;
-        const job = data.job;
-        setPollStatus(job.status);
-        if (job.status === 'completed' || job.status === 'committed') {
-          clearInterval(interval);
-          if (job.suggested_ontology) {
-            setSchemaResult({
-              ...job.suggested_ontology,
-              industry: doc?.industry || 'general',
-              documentName: doc?.title || docId
-            });
-            setStep(2);
-          }
-        } else if (job.status === 'failed') {
-          clearInterval(interval);
-          setError(job.error || job.progress_message || 'Analysis failed');
-        }
-      } catch (e) { /* retry */ }
-    }, 2000);
-  };
-
-  // Save schema as ontology, then move to extraction
-  const saveSchemaAsOntology = async (name) => {
-    try {
-      const res = await fetch('/api/ontology/custom-ontology', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getTenantHeaders() },
-        body: JSON.stringify({
-          name,
-          description: `Auto-generated from ${doc?.title || 'document'}`,
-          workspace_id: currentWorkspace?.workspace_id || '',
-          entityTypes: (schemaResult.entityTypes || []).filter(e => e.include !== false).map(e => ({
-            label: e.userLabel || e.label,
-            userLabel: e.userLabel || e.label,
-            description: e.description || '',
-            properties: (e.suggestedProperties || []).map(p => typeof p === 'string' ? { name: p, data_type: 'string' } : p)
-          })),
-          relationships: (schemaResult.relationships || []).filter(r => r.include !== false).map(r => ({
-            type: r.userPredicate || r.predicate,
-            predicate: r.userPredicate || r.predicate,
-            from: r.from, to: r.to,
-            description: r.description || ''
-          }))
-        })
-      });
-      const data = await res.json();
-      if (res.ok && data.ontologyId) {
-        setSelectedOntId(data.ontologyId);
-        setSchemaResult(null);
-        setStep(1); // Go back to step 1 with new ontology selected
-      } else {
-        setError(data.error || 'Failed to save ontology');
-      }
-    } catch (e) {
-      setError(e.message);
-    }
-  };
-
-  // Start extraction with selected ontology
-  const startExtraction = async () => {
-    if (!selectedOntology) return;
-    setExtracting(true);
-    setError(null);
-    try {
-      const existingOntology = {
-        entityTypes: entityTypes,
-        relationships: relationships,
-        datatypeProperties: selectedOntology.datatypeProperties || []
-      };
-      const res = await fetch(`/api/ontology/documents/${docId}/start-extraction`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getTenantHeaders() },
-        body: JSON.stringify({
-          existingOntology,
-          industry: selectedOntology?.name || selectedOntology?.domain || doc?.industry || 'general'
-        })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setStep(3);
-        setJobId(data.jobId);
-      } else {
-        setError(data.error || 'Extraction failed');
-      }
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setExtracting(false);
-    }
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content extraction-wizard" onClick={e => e.stopPropagation()}>
-        <div className="wizard-header">
-          <h3>🧠 Extract Entities — {doc?.title || docId}</h3>
-          <button className="review-close" onClick={onClose}>×</button>
-        </div>
-
-        {/* Step indicator */}
-        <div className="wizard-steps">
-          <div className={`wizard-step ${step >= 1 ? 'active' : ''}`}>
-            <span className="step-num">1</span> Select Ontology
-          </div>
-          <div className="wizard-step-arrow">→</div>
-          <div className={`wizard-step ${step >= 2 ? 'active' : ''}`}>
-            <span className="step-num">2</span> Review
-          </div>
-          <div className="wizard-step-arrow">→</div>
-          <div className={`wizard-step ${step >= 3 ? 'active' : ''}`}>
-            <span className="step-num">3</span> Extract
-          </div>
-        </div>
-
-        {error && <div className="wizard-error">❌ {error}</div>}
-
-        {/* Polling indicator */}
-        {pollStatus && !['completed', 'committed', 'failed'].includes(pollStatus) && (
-          <div className="wizard-polling">
-            ⏳ Analyzing document... ({pollStatus})
-          </div>
-        )}
-
-        {/* Step 1: Select ontology */}
-        {step === 1 && !pollStatus?.match(/pending|extracting|analyzing|processing/) && (
-          <div className="wizard-body">
-            <div className="form-group">
-              <label>Ontology for extraction</label>
-              <select value={selectedOntId} onChange={e => setSelectedOntId(e.target.value)}>
-                <option value="">— No ontology (analyze first) —</option>
-                {ontologies.map(o => (
-                  <option key={o.ontologyId || o.id} value={o.ontologyId || o.id}>
-                    {o.label || o.name || o.id}
-                    {(o.ontologyId || o.id) === folderOntologyId ? ' (folder default)' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {selectedOntology && (
-              <div className="wizard-ontology-preview">
-                <h4>📋 {selectedOntology.name || selectedOntology.id}</h4>
-                {entityTypes.length > 0 && (
-                  <div className="preview-section">
-                    <span className="preview-label">Entity Types ({entityTypes.length}):</span>
-                    <div className="preview-tags">
-                      {entityTypes.slice(0, 10).map((et, i) => (
-                        <span key={i} className="preview-tag">{et.userLabel || et.label || et}</span>
-                      ))}
-                      {entityTypes.length > 10 && <span className="preview-more">+{entityTypes.length - 10} more</span>}
-                    </div>
-                  </div>
-                )}
-                {relationships.length > 0 && (
-                  <div className="preview-section">
-                    <span className="preview-label">Relationships ({relationships.length}):</span>
-                    <div className="preview-tags">
-                      {relationships.slice(0, 8).map((r, i) => (
-                        <span key={i} className="preview-tag rel">{r.type || r.predicate || r}</span>
-                      ))}
-                      {relationships.length > 8 && <span className="preview-more">+{relationships.length - 8} more</span>}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="wizard-actions">
-              {selectedOntId ? (
-                <button className="btn-primary" onClick={startExtraction} disabled={extracting}>
-                  {extracting ? '⏳ Starting...' : '🧠 Extract Entities'}
-                </button>
-              ) : (
-                <button className="btn-primary" onClick={analyzeSchema} disabled={analyzing}>
-                  {analyzing ? '⏳ Starting...' : '🔍 Analyze Document'}
-                </button>
-              )}
-              <button onClick={onClose}>Cancel</button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 2: Review schema analysis results */}
-        {step === 2 && schemaResult && (
-          <div className="wizard-body">
-            <h4>🔍 Suggested Schema</h4>
-            <p className="wizard-hint">Review the suggested entity types and relationships. Save as an ontology to use for extraction.</p>
-
-            <div className="wizard-schema-results">
-              <div className="schema-section">
-                <h5>Entity Types ({schemaResult.entityTypes?.length || 0})</h5>
-                <div className="schema-items">
-                  {(schemaResult.entityTypes || []).map((et, i) => (
-                    <div key={i} className={`schema-item ${et.include === false ? 'excluded' : ''}`}>
-                      <input type="checkbox" checked={et.include !== false}
-                        onChange={() => {
-                          const updated = [...schemaResult.entityTypes];
-                          updated[i] = { ...updated[i], include: !updated[i].include === false ? true : !(updated[i].include !== false) };
-                          setSchemaResult({ ...schemaResult, entityTypes: updated });
-                        }}
-                      />
-                      <span className="schema-item-name">{et.userLabel || et.label}</span>
-                      {et.description && <span className="schema-item-desc">{et.description}</span>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="schema-section">
-                <h5>Relationships ({schemaResult.relationships?.length || 0})</h5>
-                <div className="schema-items">
-                  {(schemaResult.relationships || []).map((r, i) => (
-                    <div key={i} className={`schema-item ${r.include === false ? 'excluded' : ''}`}>
-                      <input type="checkbox" checked={r.include !== false}
-                        onChange={() => {
-                          const updated = [...schemaResult.relationships];
-                          updated[i] = { ...updated[i], include: !(updated[i].include !== false) };
-                          setSchemaResult({ ...schemaResult, relationships: updated });
-                        }}
-                      />
-                      <span className="schema-item-name">{r.from} → {r.userPredicate || r.predicate} → {r.to}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="wizard-actions">
-              <button className="btn-primary" onClick={() => saveSchemaAsOntology(doc?.title ? `${doc.title} Schema` : 'New Schema')}>
-                💾 Save as Ontology & Continue
-              </button>
-              <button onClick={() => { setStep(1); setSchemaResult(null); }}>← Back</button>
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: Extraction started */}
-        {step === 3 && (
-          <div className="wizard-body wizard-done">
-            <span className="done-icon">✅</span>
-            <h4>Extraction Started</h4>
-            <p>Job ID: <code>{jobId}</code></p>
-            <p className="wizard-hint">Monitor progress in the Processing panel. Results will appear in the Entities and Relations tabs.</p>
-            <div className="wizard-actions">
-              <button className="btn-primary" onClick={onDone}>Done</button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // Sub-components
 function Modal({ children, onClose }) {
@@ -3080,7 +2468,7 @@ function UploadModal({
           <div className="info-icon">💡</div>
           <div className="info-content">
             <strong>What happens next?</strong>
-            <p>Files are staged for review. Click "Review" in the Processing panel to map columns and commit to GraphDB.</p>
+            <p>Files are uploaded, chunked, and embedded immediately. Agents can query them right away. Click the 🧠 button on any document to optionally add Knowledge Graph entities and relationships.</p>
           </div>
         </div>
       )}
@@ -3089,8 +2477,8 @@ function UploadModal({
         <div className="upload-info-box success">
           <div className="info-icon">✅</div>
           <div className="info-content">
-            <strong>Ready for Review</strong>
-            <p>Files staged successfully. Click "Review" in the Processing panel above to continue.</p>
+            <strong>Ready for Agents</strong>
+            <p>Files uploaded and embedded. Agents can query them now. Click the 🧠 button on any document to optionally add Knowledge Graph enrichment.</p>
           </div>
         </div>
       )}
@@ -3149,617 +2537,6 @@ function FolderEditModal({ folder, ontologies, onSave, onClose }) {
   );
 }
 
-function ReviewModal({ data, onApprove, onClose }) {
-  const [concepts, setConcepts] = useState(
-    (data.concepts || []).map(c => ({ ...c, approved: true, addToOntology: c.isNewType }))
-  );
-  const [relations, setRelations] = useState(
-    (data.relations || []).map(r => ({ ...r, approved: true, addToOntology: r.isNewPredicate }))
-  );
-  const [updateOntology, setUpdateOntology] = useState(true);
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [filter, setFilter] = useState('all');
-  const [selectedType, setSelectedType] = useState(null);
-  const [confidenceThreshold, setConfidenceThreshold] = useState(0);
-  const [searchTerm, setSearchTerm] = useState('');
-  
-  // Track suggested types/predicates to add
-  const [suggestedTypes, setSuggestedTypes] = useState(
-    (data.suggestions?.unmatchedTypes || []).map(ut => ({ ...ut, addToOntology: false }))
-  );
-  const [suggestedPredicates, setSuggestedPredicates] = useState(
-    (data.suggestions?.unmatchedPredicates || []).map(up => ({ ...up, addToOntology: false }))
-  );
-  
-  const hasSuggestions = suggestedTypes.length > 0 || suggestedPredicates.length > 0;
-
-  // Compute type distribution
-  const typeDistribution = concepts.reduce((acc, c) => {
-    const type = c.type || 'Unknown';
-    if (!acc[type]) acc[type] = { count: 0, approved: 0, avgConfidence: 0, isNew: c.isNewType, entities: [] };
-    acc[type].count++;
-    acc[type].entities.push(c);
-    if (c.approved) acc[type].approved++;
-    acc[type].avgConfidence = (acc[type].avgConfidence * (acc[type].count - 1) + (c.confidence || 0)) / acc[type].count;
-    return acc;
-  }, {});
-
-  // Compute predicate distribution
-  const predicateDistribution = relations.reduce((acc, r) => {
-    const pred = r.predicate || 'Unknown';
-    if (!acc[pred]) acc[pred] = { count: 0, approved: 0, isNew: r.isNewPredicate };
-    acc[pred].count++;
-    if (r.approved) acc[pred].approved++;
-    return acc;
-  }, {});
-
-  // Quality metrics
-  const qualityMetrics = {
-    avgConfidence: concepts.length > 0 ? concepts.reduce((sum, c) => sum + (c.confidence || 0), 0) / concepts.length : 0,
-    highConfidence: concepts.filter(c => (c.confidence || 0) >= 0.8).length,
-    mediumConfidence: concepts.filter(c => (c.confidence || 0) >= 0.5 && (c.confidence || 0) < 0.8).length,
-    lowConfidence: concepts.filter(c => (c.confidence || 0) < 0.5).length,
-    ontologyCoverage: data.ontology?.types?.length > 0 
-      ? (Object.keys(typeDistribution).filter(t => data.ontology.types.includes(t)).length / Object.keys(typeDistribution).length * 100)
-      : 100,
-    uniqueTypes: Object.keys(typeDistribution).length,
-    uniquePredicates: Object.keys(predicateDistribution).length
-  };
-  
-  const toggleConcept = (idx) => {
-    setConcepts(prev => prev.map((c, i) => i === idx ? { ...c, approved: !c.approved } : c));
-  };
-  
-  const toggleRelation = (idx) => {
-    setRelations(prev => prev.map((r, i) => i === idx ? { ...r, approved: !r.approved } : r));
-  };
-  
-  const updateConceptType = (idx, newType) => {
-    setConcepts(prev => prev.map((c, i) => i === idx ? { ...c, type: newType, isNewType: !data.ontology.types.includes(newType) } : c));
-  };
-  
-  const updateRelationPredicate = (idx, newPredicate) => {
-    setRelations(prev => prev.map((r, i) => i === idx ? { ...r, predicate: newPredicate, isNewPredicate: !data.ontology.predicates.includes(newPredicate) } : r));
-  };
-  
-  const toggleAddToOntology = (type, idx) => {
-    if (type === 'concept') {
-      setConcepts(prev => prev.map((c, i) => i === idx ? { ...c, addToOntology: !c.addToOntology } : c));
-    } else if (type === 'relation') {
-      setRelations(prev => prev.map((r, i) => i === idx ? { ...r, addToOntology: !r.addToOntology } : r));
-    } else if (type === 'suggestedType') {
-      setSuggestedTypes(prev => prev.map((t, i) => i === idx ? { ...t, addToOntology: !t.addToOntology } : t));
-    } else if (type === 'suggestedPredicate') {
-      setSuggestedPredicates(prev => prev.map((p, i) => i === idx ? { ...p, addToOntology: !p.addToOntology } : p));
-    }
-  };
-
-  // Bulk operations
-  const approveAll = () => {
-    setConcepts(prev => prev.map(c => ({ ...c, approved: true })));
-    setRelations(prev => prev.map(r => ({ ...r, approved: true })));
-  };
-  
-  const rejectAll = () => {
-    setConcepts(prev => prev.map(c => ({ ...c, approved: false })));
-    setRelations(prev => prev.map(r => ({ ...r, approved: false })));
-  };
-
-  const approveByType = (type) => {
-    setConcepts(prev => prev.map(c => c.type === type ? { ...c, approved: true } : c));
-  };
-
-  const rejectByType = (type) => {
-    setConcepts(prev => prev.map(c => c.type === type ? { ...c, approved: false } : c));
-  };
-
-  const approveHighConfidence = () => {
-    setConcepts(prev => prev.map(c => (c.confidence || 0) >= 0.8 ? { ...c, approved: true } : c));
-    setRelations(prev => prev.map(r => (r.confidence || 0) >= 0.8 ? { ...r, approved: true } : r));
-  };
-
-  const rejectLowConfidence = () => {
-    setConcepts(prev => prev.map(c => (c.confidence || 0) < 0.5 ? { ...c, approved: false } : c));
-    setRelations(prev => prev.map(r => (r.confidence || 0) < 0.5 ? { ...r, approved: false } : r));
-  };
-
-  const addAllNewTypesToOntology = () => {
-    setConcepts(prev => prev.map(c => c.isNewType ? { ...c, addToOntology: true } : c));
-    setSuggestedTypes(prev => prev.map(t => ({ ...t, addToOntology: true })));
-  };
-
-  const mapTypeToOntology = (fromType, toType) => {
-    setConcepts(prev => prev.map(c => c.type === fromType ? { ...c, type: toType, isNewType: false } : c));
-  };
-  
-  // Filtering
-  const filteredConcepts = concepts.filter(c => {
-    if (filter === 'new') return c.isNewType;
-    if (filter === 'approved') return c.approved;
-    if (filter === 'rejected') return !c.approved;
-    if (filter === 'highConf') return (c.confidence || 0) >= 0.8;
-    if (filter === 'lowConf') return (c.confidence || 0) < 0.5;
-    return true;
-  }).filter(c => {
-    if (selectedType && c.type !== selectedType) return false;
-    if (searchTerm && !c.label.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-    if ((c.confidence || 1) < confidenceThreshold) return false;
-    return true;
-  });
-  
-  const filteredRelations = relations.filter(r => {
-    if (filter === 'new') return r.isNewPredicate;
-    if (filter === 'approved') return r.approved;
-    if (filter === 'rejected') return !r.approved;
-    return true;
-  }).filter(r => {
-    if (searchTerm && !r.predicate.toLowerCase().includes(searchTerm.toLowerCase()) && 
-        !r.sourceLabel?.toLowerCase().includes(searchTerm.toLowerCase()) &&
-        !r.targetLabel?.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-    return true;
-  });
-  
-  const stats = {
-    totalConcepts: concepts.length,
-    approvedConcepts: concepts.filter(c => c.approved).length,
-    newTypes: concepts.filter(c => c.isNewType && c.approved).length,
-    totalRelations: relations.length,
-    approvedRelations: relations.filter(r => r.approved).length,
-    newPredicates: relations.filter(r => r.isNewPredicate && r.approved).length,
-    suggestedTypesToAdd: suggestedTypes.filter(t => t.addToOntology).length,
-    suggestedPredicatesToAdd: suggestedPredicates.filter(p => p.addToOntology).length
-  };
-  
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content review-modal review-modal-enhanced" onClick={e => e.stopPropagation()}>
-        <div className="review-header">
-          <div className="review-header-main">
-            <h3>🔬 Schema Discovery & Review</h3>
-            <p className="review-doc">📄 {data.document?.title}</p>
-          </div>
-          <button className="review-close" onClick={onClose}>×</button>
-        </div>
-        
-        {/* Quality Metrics Dashboard */}
-        <div className="review-metrics-dashboard">
-          <div className="metrics-row">
-            <div className="metric-card">
-              <div className="metric-value">{stats.approvedConcepts}<span className="metric-total">/{stats.totalConcepts}</span></div>
-              <div className="metric-label">Entities</div>
-              <div className="metric-bar">
-                <div className="metric-bar-fill" style={{width: `${stats.totalConcepts > 0 ? (stats.approvedConcepts/stats.totalConcepts*100) : 0}%`}}></div>
-              </div>
-            </div>
-            <div className="metric-card">
-              <div className="metric-value">{stats.approvedRelations}<span className="metric-total">/{stats.totalRelations}</span></div>
-              <div className="metric-label">Relations</div>
-              <div className="metric-bar">
-                <div className="metric-bar-fill" style={{width: `${stats.totalRelations > 0 ? (stats.approvedRelations/stats.totalRelations*100) : 0}%`}}></div>
-              </div>
-            </div>
-            <div className="metric-card highlight-new">
-              <div className="metric-value">{qualityMetrics.uniqueTypes}</div>
-              <div className="metric-label">Unique Types</div>
-              <div className="metric-sub">{stats.newTypes} new</div>
-            </div>
-            <div className="metric-card highlight-quality">
-              <div className="metric-value">{(qualityMetrics.avgConfidence * 100).toFixed(0)}%</div>
-              <div className="metric-label">Avg Confidence</div>
-              <div className="metric-sub">{qualityMetrics.highConfidence} high / {qualityMetrics.lowConfidence} low</div>
-            </div>
-            <div className="metric-card highlight-coverage">
-              <div className="metric-value">{qualityMetrics.ontologyCoverage.toFixed(0)}%</div>
-              <div className="metric-label">Ontology Coverage</div>
-              <div className="metric-sub">{qualityMetrics.uniquePredicates} predicates</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Actions Bar */}
-        <div className="review-quick-actions">
-          <div className="quick-action-group">
-            <span className="action-group-label">Bulk:</span>
-            <button className="btn-action btn-approve" onClick={approveAll}>✓ Approve All</button>
-            <button className="btn-action btn-reject" onClick={rejectAll}>✗ Reject All</button>
-            <button className="btn-action btn-smart" onClick={approveHighConfidence}>⚡ Approve High Conf</button>
-            <button className="btn-action btn-smart" onClick={rejectLowConfidence}>🔻 Reject Low Conf</button>
-          </div>
-          <div className="quick-action-group">
-            <span className="action-group-label">Schema:</span>
-            <button className="btn-action btn-ontology" onClick={addAllNewTypesToOntology}>➕ Add All New Types</button>
-          </div>
-        </div>
-        
-        <div className="review-tabs-enhanced">
-          <button className={activeTab === 'dashboard' ? 'active' : ''} onClick={() => setActiveTab('dashboard')}>
-            📊 Dashboard
-          </button>
-          <button className={activeTab === 'concepts' ? 'active' : ''} onClick={() => setActiveTab('concepts')}>
-            🏷️ Entities ({concepts.length})
-          </button>
-          <button className={activeTab === 'relations' ? 'active' : ''} onClick={() => setActiveTab('relations')}>
-            🔗 Relations ({relations.length})
-          </button>
-          <button className={activeTab === 'schema' ? 'active' : ''} onClick={() => setActiveTab('schema')}>
-            📐 Schema Discovery
-          </button>
-          {hasSuggestions && (
-            <button className={`${activeTab === 'suggestions' ? 'active' : ''} has-badge`} onClick={() => setActiveTab('suggestions')}>
-              💡 Suggestions
-              <span className="tab-badge">{suggestedTypes.length + suggestedPredicates.length}</span>
-            </button>
-          )}
-        </div>
-
-        {/* Search and Filter Bar */}
-        {(activeTab === 'concepts' || activeTab === 'relations') && (
-          <div className="review-filter-bar">
-            <input 
-              type="text" 
-              placeholder="🔍 Search entities..." 
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className="search-input"
-            />
-            <select value={filter} onChange={e => setFilter(e.target.value)} className="filter-select">
-              <option value="all">All Items</option>
-              <option value="new">🆕 New Types Only</option>
-              <option value="approved">✓ Approved</option>
-              <option value="rejected">✗ Rejected</option>
-              <option value="highConf">⬆️ High Confidence</option>
-              <option value="lowConf">⬇️ Low Confidence</option>
-            </select>
-            {activeTab === 'concepts' && (
-              <select value={selectedType || ''} onChange={e => setSelectedType(e.target.value || null)} className="filter-select">
-                <option value="">All Types</option>
-                {Object.keys(typeDistribution).sort().map(t => (
-                  <option key={t} value={t}>{t} ({typeDistribution[t].count})</option>
-                ))}
-              </select>
-            )}
-            <div className="confidence-slider">
-              <label>Min Conf: {(confidenceThreshold * 100).toFixed(0)}%</label>
-              <input 
-                type="range" 
-                min="0" 
-                max="1" 
-                step="0.1" 
-                value={confidenceThreshold}
-                onChange={e => setConfidenceThreshold(parseFloat(e.target.value))}
-              />
-            </div>
-          </div>
-        )}
-        
-        <div className="review-content">
-          {/* Dashboard Tab */}
-          {activeTab === 'dashboard' && (
-            <div className="review-dashboard">
-              <div className="dashboard-section">
-                <h4>📊 Type Distribution</h4>
-                <div className="type-distribution-chart">
-                  {Object.entries(typeDistribution).sort((a, b) => b[1].count - a[1].count).map(([type, info]) => (
-                    <div key={type} className={`type-bar-item ${info.isNew ? 'new-type' : ''}`} onClick={() => { setSelectedType(type); setActiveTab('concepts'); }}>
-                      <div className="type-bar-header">
-                        <span className="type-name">{type}</span>
-                        <span className="type-count">{info.approved}/{info.count}</span>
-                        {info.isNew && <span className="new-badge">NEW</span>}
-                      </div>
-                      <div className="type-bar-track">
-                        <div 
-                          className="type-bar-fill" 
-                          style={{width: `${(info.count / Math.max(...Object.values(typeDistribution).map(t => t.count))) * 100}%`}}
-                        >
-                          <div 
-                            className="type-bar-approved" 
-                            style={{width: `${info.count > 0 ? (info.approved / info.count) * 100 : 0}%`}}
-                          ></div>
-                        </div>
-                      </div>
-                      <div className="type-bar-confidence">
-                        Avg: {(info.avgConfidence * 100).toFixed(0)}%
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="dashboard-section">
-                <h4>🔗 Predicate Distribution</h4>
-                <div className="predicate-chips">
-                  {Object.entries(predicateDistribution).sort((a, b) => b[1].count - a[1].count).map(([pred, info]) => (
-                    <div key={pred} className={`predicate-chip ${info.isNew ? 'new-predicate' : ''}`}>
-                      <span className="pred-name">{pred}</span>
-                      <span className="pred-count">{info.count}</span>
-                      {info.isNew && <span className="new-dot">●</span>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="dashboard-section">
-                <h4>📈 Confidence Distribution</h4>
-                <div className="confidence-breakdown">
-                  <div className="conf-segment high">
-                    <div className="conf-bar" style={{height: `${concepts.length > 0 ? (qualityMetrics.highConfidence / concepts.length) * 100 : 0}%`}}></div>
-                    <span className="conf-label">High<br/>({qualityMetrics.highConfidence})</span>
-                  </div>
-                  <div className="conf-segment medium">
-                    <div className="conf-bar" style={{height: `${concepts.length > 0 ? (qualityMetrics.mediumConfidence / concepts.length) * 100 : 0}%`}}></div>
-                    <span className="conf-label">Med<br/>({qualityMetrics.mediumConfidence})</span>
-                  </div>
-                  <div className="conf-segment low">
-                    <div className="conf-bar" style={{height: `${concepts.length > 0 ? (qualityMetrics.lowConfidence / concepts.length) * 100 : 0}%`}}></div>
-                    <span className="conf-label">Low<br/>({qualityMetrics.lowConfidence})</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Schema Discovery Tab */}
-          {activeTab === 'schema' && (
-            <div className="schema-discovery">
-              <div className="schema-comparison">
-                <div className="schema-column ontology-types">
-                  <h4>📚 Ontology Types ({data.ontology?.types?.length || 0})</h4>
-                  <div className="schema-type-list">
-                    {(data.ontology?.types || []).map(type => {
-                      const used = typeDistribution[type];
-                      return (
-                        <div key={type} className={`schema-type ${used ? 'used' : 'unused'}`}>
-                          <span className="type-name">{type}</span>
-                          {used ? (
-                            <span className="type-usage">✓ {used.count} found</span>
-                          ) : (
-                            <span className="type-usage">— not found</span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="schema-column discovered-types">
-                  <h4>🔍 Discovered Types ({Object.keys(typeDistribution).length})</h4>
-                  <div className="schema-type-list">
-                    {Object.entries(typeDistribution).map(([type, info]) => {
-                      const inOntology = data.ontology?.types?.includes(type);
-                      return (
-                        <div key={type} className={`schema-type ${inOntology ? 'matched' : 'new'}`}>
-                          <span className="type-name">{type}</span>
-                          <span className="type-count">{info.count} entities</span>
-                          {!inOntology && (
-                            <div className="type-actions">
-                              <button 
-                                className="btn-mini btn-add"
-                                onClick={() => {
-                                  setConcepts(prev => prev.map(c => c.type === type ? { ...c, addToOntology: true } : c));
-                                }}
-                              >
-                                ➕ Add to Ontology
-                              </button>
-                              <select 
-                                className="map-select"
-                                onChange={e => e.target.value && mapTypeToOntology(type, e.target.value)}
-                                defaultValue=""
-                              >
-                                <option value="">Map to...</option>
-                                {(data.ontology?.types || []).map(t => (
-                                  <option key={t} value={t}>{t}</option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'concepts' && (
-            <div className="review-list enhanced-list">
-              <div className="list-header">
-                <span className="col-check"></span>
-                <span className="col-label">Entity</span>
-                <span className="col-type">Type</span>
-                <span className="col-conf">Confidence</span>
-                <span className="col-actions">Actions</span>
-              </div>
-              {filteredConcepts.map((concept, idx) => {
-                const originalIdx = concepts.indexOf(concept);
-                const confClass = (concept.confidence || 0) >= 0.8 ? 'high' : (concept.confidence || 0) >= 0.5 ? 'medium' : 'low';
-                return (
-                  <div key={idx} className={`review-item-enhanced ${concept.approved ? 'approved' : 'rejected'} ${concept.isNewType ? 'new-type' : ''}`}>
-                    <input 
-                      type="checkbox" 
-                      checked={concept.approved} 
-                      onChange={() => toggleConcept(originalIdx)}
-                      className="item-checkbox"
-                    />
-                    <div className="item-label-col">
-                      <span className="item-label">{concept.label}</span>
-                      {concept.description && <span className="item-desc">{concept.description}</span>}
-                    </div>
-                    <div className="item-type-col">
-                      <select 
-                        value={concept.type} 
-                        onChange={e => updateConceptType(originalIdx, e.target.value)}
-                        className={`type-select ${concept.isNewType ? 'new-value' : ''}`}
-                      >
-                        {data.ontology.types.map(t => <option key={t} value={t}>{t}</option>)}
-                        {concept.isNewType && !data.ontology.types.includes(concept.type) && (
-                          <option value={concept.type}>🆕 {concept.type}</option>
-                        )}
-                      </select>
-                    </div>
-                    <div className={`item-confidence-col conf-${confClass}`}>
-                      <div className="conf-indicator">
-                        <div className="conf-fill" style={{width: `${(concept.confidence || 0) * 100}%`}}></div>
-                      </div>
-                      <span className="conf-value">{((concept.confidence || 0) * 100).toFixed(0)}%</span>
-                    </div>
-                    <div className="item-actions-col">
-                      {concept.isNewType && concept.approved && (
-                        <label className="add-to-ontology-label">
-                          <input 
-                            type="checkbox" 
-                            checked={concept.addToOntology} 
-                            onChange={() => toggleAddToOntology('concept', originalIdx)}
-                          />
-                          <span>Add type</span>
-                        </label>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-              {filteredConcepts.length === 0 && <div className="empty-list">No entities match filter</div>}
-            </div>
-          )}
-          
-          {activeTab === 'relations' && (
-            <div className="review-list">
-              {filteredRelations.map((rel, idx) => {
-                const originalIdx = relations.indexOf(rel);
-                return (
-                  <div key={idx} className={`review-item relation ${rel.approved ? 'approved' : 'rejected'} ${rel.isNewPredicate ? 'new-type' : ''}`}>
-                    <input 
-                      type="checkbox" 
-                      checked={rel.approved} 
-                      onChange={() => toggleRelation(originalIdx)}
-                    />
-                    <div className="item-main relation-main">
-                      <span className="rel-source">{rel.sourceLabel}</span>
-                      <input 
-                        type="text"
-                        value={rel.predicate}
-                        onChange={e => updateRelationPredicate(originalIdx, e.target.value)}
-                        className={`rel-predicate ${rel.isNewPredicate ? 'new-value' : ''}`}
-                      />
-                      <span className="rel-target">{rel.targetLabel}</span>
-                    </div>
-                    {rel.isNewPredicate && rel.approved && (
-                      <label className="add-to-ontology">
-                        <input 
-                          type="checkbox" 
-                          checked={rel.addToOntology} 
-                          onChange={() => toggleAddToOntology('relation', originalIdx)}
-                        />
-                        Add predicate
-                      </label>
-                    )}
-                    <span className="item-confidence">{(rel.confidence * 100).toFixed(0)}%</span>
-                  </div>
-                );
-              })}
-              {filteredRelations.length === 0 && <div className="empty-list">No relations match filter</div>}
-            </div>
-          )}
-          
-          {activeTab === 'suggestions' && (
-            <div className="review-suggestions">
-              <p className="suggestions-intro">
-                💡 The LLM suggested these types/predicates that aren't in your ontology. 
-                Check the ones you want to add.
-              </p>
-              
-              {suggestedTypes.length > 0 && (
-                <div className="suggestion-section">
-                  <h4>🏷️ Suggested Entity Types</h4>
-                  <div className="suggestion-list">
-                    {suggestedTypes.map((st, idx) => (
-                      <div key={idx} className={`suggestion-item ${st.addToOntology ? 'selected' : ''}`}>
-                        <label className="suggestion-checkbox">
-                          <input 
-                            type="checkbox" 
-                            checked={st.addToOntology} 
-                            onChange={() => toggleAddToOntology('suggestedType', idx)}
-                          />
-                          <span className="suggestion-type">{st.suggestedType}</span>
-                        </label>
-                        <span className="suggestion-count">({st.count} entities)</span>
-                        <span className="suggestion-assigned">→ currently assigned to: <em>{st.assignedType}</em></span>
-                        <div className="suggestion-examples">
-                          Examples: {st.examples.slice(0, 3).join(', ')}
-                          {st.examples.length > 3 && ` +${st.examples.length - 3} more`}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {suggestedPredicates.length > 0 && (
-                <div className="suggestion-section">
-                  <h4>🔗 Suggested Predicates</h4>
-                  <div className="suggestion-list">
-                    {suggestedPredicates.map((sp, idx) => (
-                      <div key={idx} className={`suggestion-item ${sp.addToOntology ? 'selected' : ''}`}>
-                        <label className="suggestion-checkbox">
-                          <input 
-                            type="checkbox" 
-                            checked={sp.addToOntology} 
-                            onChange={() => toggleAddToOntology('suggestedPredicate', idx)}
-                          />
-                          <span className="suggestion-type">{sp.suggestedPredicate}</span>
-                        </label>
-                        <span className="suggestion-count">({sp.count} relations)</span>
-                        <span className="suggestion-assigned">→ currently assigned to: <em>{sp.assignedPredicate}</em></span>
-                        <div className="suggestion-examples">
-                          Examples: {sp.examples.slice(0, 2).join('; ')}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              
-              {suggestedTypes.length === 0 && suggestedPredicates.length === 0 && (
-                <div className="empty-list">No suggestions - all extracted types match your ontology!</div>
-              )}
-            </div>
-          )}
-        </div>
-        
-        {data.ontology?.id && (stats.newTypes > 0 || stats.newPredicates > 0) && (
-          <div className="review-ontology-update">
-            <label>
-              <input 
-                type="checkbox" 
-                checked={updateOntology} 
-                onChange={e => setUpdateOntology(e.target.checked)}
-              />
-              Update ontology with new types/predicates marked "Add"
-            </label>
-          </div>
-        )}
-        
-        <div className="modal-actions">
-          <button onClick={onClose}>Cancel</button>
-          <button 
-            className="primary" 
-            onClick={() => onApprove(
-              concepts, 
-              relations, 
-              updateOntology,
-              suggestedTypes.filter(t => t.addToOntology).map(t => t.suggestedType),
-              suggestedPredicates.filter(p => p.addToOntology).map(p => p.suggestedPredicate)
-            )}
-            disabled={stats.approvedConcepts === 0}
-          >
-            ✅ Approve & Save ({stats.approvedConcepts} entities, {stats.approvedRelations} relations)
-            {(stats.suggestedTypesToAdd > 0 || stats.suggestedPredicatesToAdd > 0) && 
-              ` + ${stats.suggestedTypesToAdd + stats.suggestedPredicatesToAdd} to ontology`}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // Schema Analysis Modal - for reviewing suggested ontology from documents
 function SchemaAnalysisModal({ analysis, onSaveAsOntology, onClose }) {
@@ -4057,65 +2834,5 @@ function SchemaAnalysisModal({ analysis, onSaveAsOntology, onClose }) {
   );
 }
 
-// CSV Data View Component - queries GraphDB for CSV data
-// Sheet Viewer Modal - standalone spreadsheet view for CSV/Excel files
-function CSVDataView({ docUri }) {
-  const { getTenantHeaders } = useTenant();
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(0);
-  const pageSize = 50;
-
-  useEffect(() => {
-    if (docUri) loadData();
-  }, [docUri, page]);
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/ontology/documents/csv-data?docUri=${encodeURIComponent(docUri)}&limit=${pageSize}&offset=${page * pageSize}`, {
-        headers: getTenantHeaders()
-      });
-      const result = await res.json();
-      if (result.success) setData(result);
-    } catch (e) {
-      console.error('Failed to load CSV data:', e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) return <div className="csv-loading">Loading data...</div>;
-  if (!data?.rows?.length) return <div className="empty-tab">No data found. Data may be in GraphDB only.</div>;
-
-  return (
-    <div className="csv-data-view">
-      <div className="csv-info">
-        Showing {page * pageSize + 1}-{Math.min((page + 1) * pageSize, data.total)} of {data.total} rows
-      </div>
-      <div className="csv-table-wrap">
-        <table className="csv-table">
-          <thead>
-            <tr>{data.columns?.map(col => <th key={col}>{col}</th>)}</tr>
-          </thead>
-          <tbody>
-            {data.rows.map((row, i) => (
-              <tr key={i}>
-                {data.columns?.map(col => <td key={col}>{row[col]}</td>)}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {data.total > pageSize && (
-        <div className="csv-pagination">
-          <button disabled={page === 0} onClick={() => setPage(p => p - 1)}>← Prev</button>
-          <span>Page {page + 1} of {Math.ceil(data.total / pageSize)}</span>
-          <button disabled={(page + 1) * pageSize >= data.total} onClick={() => setPage(p => p + 1)}>Next →</button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 export default FileManager;

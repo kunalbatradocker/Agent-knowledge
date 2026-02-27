@@ -120,33 +120,63 @@ class VKGOntologyService {
   }
 
   async _saveOntology(tenantId, workspaceId, turtle, validSchemas, durationMs, options = {}) {
-    const name = options.name || 'vkg-ontology';
-    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    
-    // Use workspace name (human-readable) in graph IRI instead of UUID
-    const wsSlug = options.workspaceName || workspaceId;
-    const graphIRI = `http://purplefabric.ai/graphs/tenant/${tenantId}/workspace/${wsSlug}/ontology/${slug}`;
-    logger.info(`[VKG] Storing ontology "${name}" in GraphDB: ${graphIRI}`);
+      const name = options.name || 'vkg-ontology';
+      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-    // Import directly to the named graph (bypasses graphDBStore.importTurtle's IRI builder)
-    await graphDBStore.importTurtleToGraph(tenantId, turtle, graphIRI);
+      // Use workspace name (human-readable) in graph IRI instead of UUID
+      const wsSlug = options.workspaceName || workspaceId;
+      const graphIRI = `http://purplefabric.ai/graphs/tenant/${tenantId}/workspace/${wsSlug}/ontology/${slug}`;
+      logger.info(`[VKG] Storing ontology "${name}" in GraphDB: ${graphIRI}`);
 
-    // Cache the mapping annotations (keyed by workspace ID for stable lookups)
-    await this._cacheMappings(tenantId, workspaceId, turtle);
+      // --- Versioning: backup current version before overwrite ---
+      const versionKey = `vkg:version:${tenantId}:${workspaceId}`;
+      const currentVersion = await this._getCurrentVersion(tenantId, workspaceId);
+      const newVersion = (currentVersion?.version || 0) + 1;
 
-    logger.info(`[VKG] Ontology "${name}" saved to GraphDB (workspace: ${wsSlug})`);
+      // Backup current turtle + mappings if they exist
+      if (currentVersion?.version > 0) {
+        const backupKey = `vkg:version:${tenantId}:${workspaceId}:v${currentVersion.version}`;
+        await redisService.set(backupKey, JSON.stringify(currentVersion), 86400 * 30); // 30 day retention
+        logger.info(`[VKG] Backed up version ${currentVersion.version} before overwrite`);
+      }
 
-    return {
-      success: true,
-      status: 'saved',
-      name,
-      graphIRI,
-      workspaceName: wsSlug,
-      catalogsUsed: validSchemas.map(s => s.catalog),
-      tablesFound: validSchemas.reduce((sum, s) => sum + s.tables.length, 0),
-      durationMs
-    };
-  }
+      // Import directly to the named graph (DELETE + POST = full replacement)
+      await graphDBStore.importTurtleToGraph(tenantId, turtle, graphIRI);
+
+      // Cache the mapping annotations (keyed by workspace ID for stable lookups)
+      await this._cacheMappings(tenantId, workspaceId, turtle);
+
+      // Store version metadata + turtle snapshot
+      const catalogsUsed = validSchemas.map(s => s.catalog);
+      const tablesFound = validSchemas.reduce((sum, s) => sum + s.tables.length, 0);
+      const versionMeta = {
+        version: newVersion,
+        name,
+        graphIRI,
+        workspaceName: wsSlug,
+        catalogsUsed,
+        tablesFound,
+        durationMs,
+        turtle,
+        createdAt: new Date().toISOString(),
+        createdBy: options.createdBy || 'system'
+      };
+      await redisService.set(versionKey, JSON.stringify(versionMeta)); // no TTL — persists
+
+      logger.info(`[VKG] Ontology "${name}" v${newVersion} saved to GraphDB (workspace: ${wsSlug})`);
+
+      return {
+        success: true,
+        status: 'saved',
+        name,
+        version: newVersion,
+        graphIRI,
+        workspaceName: wsSlug,
+        catalogsUsed,
+        tablesFound,
+        durationMs
+      };
+    }
 
   /**
    * Build a human-readable schema description for the LLM prompt
@@ -671,39 +701,126 @@ class VKGOntologyService {
     }
 
   async detectSchemaDrift(tenantId, workspaceId, workspaceName = null) {
-    const [currentSchemas, storedMappings] = await Promise.all([
-      trinoCatalogService.introspectAllCatalogs(tenantId, workspaceId),
-      this.getMappingAnnotations(tenantId, workspaceId, workspaceName)
-    ]);
+      const [currentSchemas, storedMappings] = await Promise.all([
+        trinoCatalogService.introspectAllCatalogs(tenantId, workspaceId),
+        this.getMappingAnnotations(tenantId, workspaceId, workspaceName)
+      ]);
 
-    const drift = { newTables: [], removedTables: [], newColumns: [], removedColumns: [] };
+      const drift = { newTables: [], removedTables: [], newColumns: [], removedColumns: [] };
 
-    const currentTables = new Set();
-    for (const schema of currentSchemas) {
-      for (const table of (schema.tables || [])) {
-        currentTables.add(table.fullName);
+      // Build current table → columns lookup
+      const currentTables = new Map();
+      for (const schema of currentSchemas) {
+        for (const table of (schema.tables || [])) {
+          const cols = new Set((table.columns || []).map(c => c.name.toLowerCase()));
+          currentTables.set(table.fullName, cols);
+        }
       }
-    }
 
-    const mappedTables = new Set();
-    for (const [, meta] of Object.entries(storedMappings.classes)) {
-      if (meta.sourceTable) mappedTables.add(meta.sourceTable);
-    }
+      // Build mapped table → columns lookup
+      const mappedTables = new Map();
+      for (const [, meta] of Object.entries(storedMappings.classes || {})) {
+        if (meta.sourceTable) {
+          if (!mappedTables.has(meta.sourceTable)) mappedTables.set(meta.sourceTable, new Set());
+          if (meta.sourceIdColumn) mappedTables.get(meta.sourceTable).add(meta.sourceIdColumn.toLowerCase());
+        }
+      }
+      for (const [, meta] of Object.entries(storedMappings.properties || {})) {
+        if (meta.sourceTable && meta.sourceColumn) {
+          if (!mappedTables.has(meta.sourceTable)) mappedTables.set(meta.sourceTable, new Set());
+          mappedTables.get(meta.sourceTable).add(meta.sourceColumn.toLowerCase());
+        }
+      }
 
-    for (const table of currentTables) {
-      if (!mappedTables.has(table)) drift.newTables.push(table);
-    }
-    for (const table of mappedTables) {
-      if (!currentTables.has(table)) drift.removedTables.push(table);
-    }
+      // Table-level drift
+      for (const table of currentTables.keys()) {
+        if (!mappedTables.has(table)) drift.newTables.push(table);
+      }
+      for (const table of mappedTables.keys()) {
+        if (!currentTables.has(table)) drift.removedTables.push(table);
+      }
 
-    drift.hasDrift = drift.newTables.length > 0 || drift.removedTables.length > 0;
-    return drift;
-  }
+      // Column-level drift (only for tables that exist in both)
+      for (const [table, mappedCols] of mappedTables.entries()) {
+        const currentCols = currentTables.get(table);
+        if (!currentCols) continue; // table removed — already tracked
+        for (const col of mappedCols) {
+          if (!currentCols.has(col)) {
+            drift.removedColumns.push(`${table}.${col}`);
+          }
+        }
+        for (const col of currentCols) {
+          if (!mappedCols.has(col)) {
+            drift.newColumns.push(`${table}.${col}`);
+          }
+        }
+      }
+
+      drift.hasDrift = drift.newTables.length > 0 || drift.removedTables.length > 0 ||
+                       drift.newColumns.length > 0 || drift.removedColumns.length > 0;
+
+      // Include version info
+      const version = await this._getCurrentVersion(tenantId, workspaceId);
+      drift.currentVersion = version.version || 0;
+      drift.lastUpdated = version.createdAt || null;
+
+      return drift;
+    }
 
   async invalidateCache(tenantId, workspaceId) {
     await redisService.del(`vkg:mappings:v2:${tenantId}:${workspaceId}`);
   }
+  /**
+     * Get current version metadata for a workspace's VKG ontology
+     */
+    async _getCurrentVersion(tenantId, workspaceId) {
+      const versionKey = `vkg:version:${tenantId}:${workspaceId}`;
+      const raw = await redisService.get(versionKey);
+      if (!raw) return { version: 0 };
+      try { return JSON.parse(raw); } catch { return { version: 0 }; }
+    }
+
+    /**
+     * Get version history (current + available backups)
+     */
+    async getVersionHistory(tenantId, workspaceId) {
+      const current = await this._getCurrentVersion(tenantId, workspaceId);
+      const versions = [];
+      if (current.version > 0) {
+        versions.push({ ...current, turtle: undefined, isCurrent: true });
+      }
+      // Scan for backups (check last 10 versions)
+      for (let v = (current.version || 1) - 1; v >= Math.max(1, (current.version || 1) - 10); v--) {
+        const backupKey = `vkg:version:${tenantId}:${workspaceId}:v${v}`;
+        const raw = await redisService.get(backupKey);
+        if (raw) {
+          try {
+            const meta = JSON.parse(raw);
+            versions.push({ ...meta, turtle: undefined, isCurrent: false });
+          } catch { /* skip corrupt */ }
+        }
+      }
+      return versions;
+    }
+
+    /**
+     * Rollback to a previous version
+     */
+    async rollbackToVersion(tenantId, workspaceId, targetVersion, options = {}) {
+      const backupKey = `vkg:version:${tenantId}:${workspaceId}:v${targetVersion}`;
+      const raw = await redisService.get(backupKey);
+      if (!raw) throw new Error(`Version ${targetVersion} not found or expired`);
+
+      const backup = JSON.parse(raw);
+      if (!backup.turtle) throw new Error(`Version ${targetVersion} has no turtle content`);
+
+      logger.info(`[VKG] Rolling back to version ${targetVersion} for workspace ${workspaceId}`);
+      return this._saveOntology(tenantId, workspaceId, backup.turtle, [], 0, {
+        name: backup.name || 'vkg-ontology',
+        workspaceName: backup.workspaceName || options.workspaceName || workspaceId,
+        createdBy: options.createdBy || 'rollback'
+      });
+    }
 }
 
 module.exports = new VKGOntologyService();

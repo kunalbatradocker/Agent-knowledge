@@ -15,6 +15,748 @@ class GraphRAGService {
     this.maxContextChunks = 50;
     this.maxGraphNodes = 20;
     this.maxConceptsPerQuery = 10;
+    // Cache for compact schema summaries (5 min TTL)
+    this._compactSchemaCache = null;
+    this._compactSchemaCacheTime = 0;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // UNIFIED AGENT QUERY PIPELINE
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Unified query pipeline for agents. Replaces the single-mode routing with
+   * a planner that decides which sources to consult, runs them in parallel,
+   * fuses the results, and generates a single grounded response.
+   */
+  async unifiedAgentQuery(question, options = {}) {
+    const {
+      agent = {},
+      memoryContext = null,
+      scopedDocumentIds = null,
+      tenant_id = 'default',
+      workspace_id = 'default',
+      history = [],
+      bedrockToken = null
+    } = options;
+
+    if (bedrockToken) this._activeBedrockToken = bedrockToken;
+
+    const agentFolders = agent.folders || [];
+    const agentOntologies = agent.ontologies || [];
+    let agentVkgDbs = agent.vkg_databases || [];
+    const topK = agent.settings?.topK || 8;
+    const graphDepth = agent.settings?.graphDepth || 2;
+
+    // ── VKG databases: explicit selection only ──
+    // VKG is only triggered when the agent explicitly has vkg_databases configured.
+    // Previously we auto-derived VKG databases from ontology mapping annotations,
+    // but this caused false positives (e.g., an ontology with VKG mappings would
+    // trigger VKG queries even when the user only wanted graph/RAG queries).
+    if (agentVkgDbs.length === 0) {
+      console.log(`   ℹ️ No VKG databases configured — VKG source will not be used`);
+    }
+
+    console.log('\n' + '═'.repeat(70));
+    console.log(`🧠 UNIFIED AGENT PIPELINE: "${question}"`);
+    console.log(`   Agent: ${agent.name || 'unknown'} | Sources: folders=${agentFolders.length}, ontologies=${agentOntologies.length}, vkg=${agentVkgDbs.length}`);
+    if (agentOntologies.length > 0) console.log(`   📚 Ontologies: ${agentOntologies.map(o => o.name || o.id).join(', ')}`);
+    if (agentVkgDbs.length > 0) console.log(`   🗄️ VKG databases: ${agentVkgDbs.join(', ')}`);
+    console.log('═'.repeat(70));
+
+    try {
+      // ── Phase 1: Query Planning ──
+      const plan = await this._planQuery(question, {
+        memoryContext,
+        hasFolders: agentFolders.length > 0,
+        hasOntologies: agentOntologies.length > 0,
+        hasVkgDbs: agentVkgDbs.length > 0,
+        ontologyNames: agentOntologies.map(o => o.name || o.id),
+        vkgDatabaseNames: agentVkgDbs,
+        agentOntologies,
+        tenant_id,
+        workspace_id,
+        history
+      });
+
+      console.log(`   📋 Plan: sources=${plan.sources.join(',')} | rewrite="${plan.rewrittenQuery}"`);
+      console.log(`   📋 Entity hints: [${plan.entityHints.join(', ')}]`);
+
+      const effectiveQuery = plan.rewrittenQuery || question;
+
+      // ── Phase 2: Parallel Retrieval ──
+      const retrievalResults = await this._parallelRetrieve(effectiveQuery, plan, {
+        topK, graphDepth, tenant_id, workspace_id,
+        scopedDocumentIds, agentVkgDbs, history,
+        entityHints: plan.entityHints,
+        memoryContext,
+        agentId: agent.agent_id,
+        userId: options.userId || 'default',
+        agentOntologies
+      });
+
+      // ── Phase 3: Context Fusion ──
+      const fused = this._fuseContext(retrievalResults, plan, {
+        memoryContext,
+        maxTokenBudget: 6000
+      });
+
+      console.log(`   🔗 Fused: ${fused.chunks.length} chunks, ${fused.entities.length} entities, ${fused.relations.length} relations`);
+      console.log(`   🔗 Sources used: ${fused.sourcesUsed.join(', ')}`);
+
+      // ── Phase 4: Response Generation ──
+      const contextString = this._buildUnifiedContextString(fused, plan);
+
+      // Build system prompt with agent perspective + core memory
+      const systemParts = [];
+      if (agent.perspective) systemParts.push(agent.perspective);
+
+      // Add core memory as persistent context
+      if (memoryContext) {
+        const coreSection = memoryContext.split('\n\n').find(s => s.includes('[Core Memory'));
+        if (coreSection) systemParts.push(coreSection);
+        const recalledSection = memoryContext.split('\n\n').find(s => s.includes('[Recalled Memories'));
+        if (recalledSection) systemParts.push(recalledSection);
+      }
+
+      // If VKG returned data, include it as structured context
+      let vkgContext = '';
+      if (retrievalResults.vkg?.answer && retrievalResults.vkg.rowCount > 0) {
+        vkgContext = `\n\n=== FEDERATED DATABASE RESULTS ===\n${retrievalResults.vkg.answer}\n(Source: SQL query across ${retrievalResults.vkg.databases?.join(', ') || 'databases'})`;
+      }
+
+      const systemPrompt = `You are a precise assistant that answers questions based on the provided context.
+${systemParts.length > 0 ? '\n' + systemParts.join('\n\n') + '\n' : ''}
+RULES:
+1. Use information from the provided context to answer
+2. When citing information, mention the source (document name, graph entity, memory, or database)
+3. If partial information exists, share what you found and note what's missing
+4. Be direct and concise
+5. If the context contains recalled memories, use them to inform your answer but prioritize factual data from documents and graphs`;
+
+      const fullContext = contextString + vkgContext;
+
+      const userPrompt = `CONTEXT:\n${fullContext}\n\n---\nQUESTION: ${question}\n---\nAnswer using the context above. Cite sources when possible.`;
+
+      // Build messages with conversation history for continuity
+      const messages = [{ role: 'system', content: systemPrompt }];
+      // Include recent history so the LLM can reference prior answers
+      if (history.length > 0) {
+        for (const msg of history.slice(-4)) {
+          messages.push({ role: msg.role, content: (msg.content || '').substring(0, 500) });
+        }
+      }
+      messages.push({ role: 'user', content: userPrompt });
+
+      const answer = await this._llmChat(messages, { temperature: 0.3, maxTokens: 1500 });
+
+      console.log('   ✅ Unified pipeline complete');
+      console.log('═'.repeat(70) + '\n');
+
+      // Build response
+      const metadata = {
+        searchMode: 'unified',
+        planSources: plan.sources,
+        sourcesUsed: fused.sourcesUsed,
+        rewrittenQuery: plan.rewrittenQuery !== question ? plan.rewrittenQuery : undefined,
+        entityHints: plan.entityHints,
+        vectorChunksUsed: retrievalResults.vector?.chunks?.length || 0,
+        graphConceptsUsed: retrievalResults.graph?.concepts?.length || 0,
+        vkgRowCount: retrievalResults.vkg?.rowCount || 0,
+        memoriesRecalled: retrievalResults.memory?.memories?.length || 0,
+        totalContextLength: fullContext.length
+      };
+
+      const sources = {
+        chunks: (fused.chunks || []).map(c => ({
+          text: c.text ? (c.text.substring(0, 300) + (c.text.length > 300 ? '...' : '')) : '',
+          documentName: c.documentName || 'Unknown Document',
+          similarity: c.similarity?.toFixed?.(3) || '0.000',
+          chunkIndex: c.chunkIndex,
+          source: c.source
+        })),
+        graphEntities: (fused.entities || []).map(e => ({
+          label: e.label,
+          type: e.type || 'Concept',
+          description: e.description || '',
+          source: e.source,
+          boosted: e.boosted || false
+        })),
+        relations: (fused.relations || []).slice(0, 15).map(r => ({
+          source: r.source,
+          predicate: r.predicate || r.type,
+          target: r.target
+        }))
+      };
+
+      if (retrievalResults.vkg?.sql) {
+        sources.vkg = {
+          sql: retrievalResults.vkg.sql,
+          databases: retrievalResults.vkg.databases || [],
+          rowCount: retrievalResults.vkg.rowCount || 0
+        };
+      }
+
+      return {
+        answer,
+        sources,
+        metadata,
+        context_graph: retrievalResults.vkg?.contextGraph || null,
+        reasoning_trace: retrievalResults.vkg?.reasoningTrace || null
+      };
+    } catch (error) {
+      console.error('Unified pipeline error:', error);
+      console.log('   ⚠️ Falling back to single-mode query...');
+      return this._fallbackSingleMode(question, options);
+    } finally {
+      this._activeBedrockToken = null;
+    }
+  }
+
+  /**
+   * Query planner: decides which sources to consult based on the query,
+   * memory context, and available data sources.
+   */
+  async _planQuery(question, context = {}) {
+        const {
+          memoryContext = null,
+          hasFolders = false,
+          hasOntologies = false,
+          hasVkgDbs = false,
+          ontologyNames = [],
+          vkgDatabaseNames = [],
+          agentOntologies = [],
+          tenant_id = 'default',
+          workspace_id = 'default',
+          history = []
+        } = context;
+
+        // Build a compact schema summary for the planner — scoped to agent's ontologies
+        let schemaSummary = '';
+        try {
+          schemaSummary = await this._getCompactSchemaSummary(tenant_id, workspace_id, agentOntologies);
+        } catch { /* schema unavailable */ }
+
+        // Extract memory-derived hints
+        let memoryHints = '';
+        if (memoryContext) {
+          memoryHints = memoryContext.substring(0, 800);
+        }
+
+        // Build available sources list based on agent's data source manifest
+        // GraphDB is NOT a query source — it provides ontology schema to guide Neo4j and VKG queries.
+        const availableSources = [];
+        if (hasFolders) {
+          availableSources.push('- "vector": Semantic search over document chunks (best for: finding specific passages, factual lookups in documents)');
+        }
+        if (hasFolders || hasOntologies) {
+          const ontologyNote = hasOntologies
+            ? ` Ontology-guided using: ${ontologyNames.join(', ')}.`
+            : '';
+          availableSources.push(`- "graph": Neo4j knowledge graph traversal (best for: entity relationships, "how are X and Y connected", multi-hop reasoning, listing entities by type).${ontologyNote}`);
+        }
+        if (hasVkgDbs) {
+          const dbList = vkgDatabaseNames.join(', ');
+          availableSources.push(`- "vkg": Federated SQL databases via Trino (databases: ${dbList}). Best for: structured data queries, aggregations, counts, rankings, numbers, listing records, "top N", "how many", filtering. ALWAYS use VKG when the question asks for data that lives in databases.`);
+        }
+        availableSources.push('- "memory": Agent long-term memory from past conversations (best for: user preferences, past decisions, prior context)');
+
+        // Build example that matches the agent's actual sources
+        const exampleSources = [];
+        if (hasFolders) exampleSources.push('vector');
+        if (hasVkgDbs) exampleSources.push('vkg');
+        else if (hasFolders || hasOntologies) exampleSources.push('graph');
+        if (exampleSources.length === 0) exampleSources.push('memory');
+        const exampleSourcesStr = JSON.stringify(exampleSources);
+
+        // Build conversation history context for the planner
+        let historyContext = '';
+        if (history.length > 0) {
+          const recentHistory = history.slice(-4).map(m => `${m.role}: ${(m.content || '').substring(0, 200)}`).join('\n');
+          historyContext = `RECENT CONVERSATION:\n${recentHistory}\n`;
+        }
+
+        const plannerPrompt = `You are a query routing planner for a knowledge system. Based on the user's question and available data sources, decide which sources to query.
+
+    AVAILABLE SOURCES:
+    ${availableSources.join('\n')}
+
+    ${schemaSummary ? `SCHEMA SUMMARY:\n${schemaSummary}\n` : ''}
+    ${memoryHints ? `AGENT MEMORY:\n${memoryHints}\n` : ''}
+    ${historyContext}
+    IMPORTANT ROUTING RULES:
+    - If the agent has VKG databases and the question asks for data listings, rankings, counts, aggregations, or structured records, ALWAYS include "vkg" in sources.
+    - "graph" is for entity relationships already extracted into Neo4j. "vkg" is for querying live database tables.
+    - When in doubt between "graph" and "vkg", prefer "vkg" if databases are configured.
+    - If the question is a follow-up (references "this", "that", "their", etc.), use the RECENT CONVERSATION to resolve what the user is referring to. Include the resolved entity names in the rewritten query.
+
+    Given the user's question, decide:
+    1. Which sources to query (1-3, always include "memory" if memory context exists)
+    2. A rewritten query incorporating conversation context and memory (CRITICAL: resolve pronouns and references from the conversation history into specific entity names/IDs)
+    3. Key entity names/terms to search for
+
+    Return JSON only:
+    {
+      "sources": ${exampleSourcesStr},
+      "rewrittenQuery": "the query, possibly enriched with memory context",
+      "entityHints": ["Entity1", "Term2"],
+      "reasoning": "brief explanation"
+    }
+
+    USER QUESTION: ${question}`;
+
+        try {
+          const result = await this._llmChat([
+            { role: 'user', content: plannerPrompt }
+          ], { temperature: 0.1, maxTokens: 300 });
+
+          const jsonMatch = result.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            let sources = Array.isArray(parsed.sources) ? parsed.sources : ['vector', 'graph'];
+            if (memoryContext && !sources.includes('memory')) sources.push('memory');
+            // Filter out sources the agent doesn't have access to
+            if (!hasVkgDbs) sources = sources.filter(s => s !== 'vkg');
+            if (!hasFolders) sources = sources.filter(s => s !== 'vector');
+            if (!hasFolders && !hasOntologies) sources = sources.filter(s => s !== 'graph');
+            // Remove legacy "graphdb" source — GraphDB is schema-only, not a query target
+            sources = sources.filter(s => s !== 'graphdb');
+            // If no real sources left, ensure at least memory
+            if (sources.filter(s => s !== 'memory').length === 0) {
+              if (hasFolders) sources.unshift('vector');
+              else sources.unshift('memory');
+            }
+
+            return {
+              sources,
+              rewrittenQuery: parsed.rewrittenQuery || question,
+              entityHints: parsed.entityHints || this.extractKeyTermsFallback(question),
+              reasoning: parsed.reasoning || ''
+            };
+          }
+        } catch (e) {
+          console.warn('   ⚠️ Planner LLM failed, using defaults:', e.message);
+        }
+
+        // Fallback: use all available non-memory sources
+        const fallbackSources = [];
+        if (hasFolders) fallbackSources.push('vector');
+        if (hasFolders || hasOntologies) fallbackSources.push('graph');
+        if (hasVkgDbs) fallbackSources.push('vkg');
+        if (memoryContext) fallbackSources.push('memory');
+        if (fallbackSources.length === 0) fallbackSources.push('memory');
+
+        return {
+          sources: fallbackSources,
+          rewrittenQuery: question,
+          entityHints: this.extractKeyTermsFallback(question),
+          reasoning: 'Fallback: planner unavailable, using all available sources'
+        };
+      }
+
+  /**
+   * Build a compact schema summary for the planner (cached 5 min).
+   */
+  async _getCompactSchemaSummary(tenantId, workspaceId, agentOntologies = []) {
+      // Cache key includes ontology IDs so different agents get different summaries
+      const ontIds = agentOntologies.map(o => o.id || o.name || '').sort().join(',');
+      const cacheKey = `${tenantId}:${workspaceId}:${ontIds}`;
+      if (this._compactSchemaCache && this._compactSchemaCacheKey === cacheKey && Date.now() - this._compactSchemaCacheTime < 300000) {
+        return this._compactSchemaCache;
+      }
+
+      const parts = [];
+
+      try {
+        await driver.verifyConnectivity();
+        const schema = await neo4jService.getSchema();
+        if (schema.nodeLabels.length > 0) {
+          const labels = schema.nodeLabels.slice(0, 15).map(n => `${n.label}(${n.count})`).join(', ');
+          parts.push(`Neo4j entities: ${labels}`);
+          const patterns = schema.patterns.slice(0, 10).map(p => `(${p.from})-[:${p.relationship}]->(${p.to})`).join(', ');
+          if (patterns) parts.push(`Patterns: ${patterns}`);
+        }
+      } catch { /* Neo4j unavailable */ }
+
+      try {
+        const graphDBStore = require('./graphDBStore');
+
+        // If agent has specific ontologies, scope the SPARQL to those ontology graphs only
+        if (agentOntologies.length > 0) {
+          const specificGraphs = [];
+          for (const ont of agentOntologies) {
+            // Try to resolve the ontology's graph IRI
+            const ontId = ont.id || ont.name;
+            if (ont.graphIRI) {
+              specificGraphs.push(ont.graphIRI);
+            } else {
+              // Build possible graph IRIs for this ontology
+              specificGraphs.push(`http://example.org/graphs/global/ontology/${ontId}`);
+              specificGraphs.push(`http://purplefabric.ai/graphs/tenant/${tenantId}/workspace/${workspaceId}/ontology/${ontId}`);
+            }
+          }
+
+          // Use FROM clauses to scope to agent's ontologies only
+          const fromClauses = specificGraphs.map(g => `FROM <${g}>`).join('\n');
+          const classesQuery = `
+            PREFIX owl: <http://www.w3.org/2002/07/owl#>
+            PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+            SELECT DISTINCT ?label
+            ${fromClauses}
+            WHERE { ?class a owl:Class . OPTIONAL { ?class rdfs:label ?label } }
+            LIMIT 20`;
+          const res = await graphDBStore.executeSPARQL(tenantId, workspaceId, classesQuery, 'schema');
+          const classLabels = (res?.results?.bindings || [])
+            .map(b => b.label?.value)
+            .filter(Boolean)
+            .slice(0, 15);
+          if (classLabels.length > 0) {
+            parts.push(`Ontology classes (agent-scoped): ${classLabels.join(', ')}`);
+          }
+        } else {
+          // No specific ontologies — fetch workspace-level schema
+          const classesQuery = `
+            PREFIX owl: <http://www.w3.org/2002/07/owl#>
+            PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+            SELECT DISTINCT ?label WHERE {
+              ?class a owl:Class . OPTIONAL { ?class rdfs:label ?label }
+            } LIMIT 20`;
+          const res = await graphDBStore.executeSPARQL(tenantId, workspaceId, classesQuery, 'schema');
+          const classLabels = (res?.results?.bindings || [])
+            .map(b => b.label?.value)
+            .filter(Boolean)
+            .slice(0, 15);
+          if (classLabels.length > 0) {
+            parts.push(`Ontology classes: ${classLabels.join(', ')}`);
+          }
+        }
+      } catch { /* GraphDB unavailable */ }
+
+      const summary = parts.join('\n');
+      this._compactSchemaCache = summary;
+      this._compactSchemaCacheKey = cacheKey;
+      this._compactSchemaCacheTime = Date.now();
+      return summary;
+    }
+
+  /**
+   * Run retrieval from multiple sources in parallel based on the plan.
+   */
+  async _parallelRetrieve(query, plan, options = {}) {
+      const {
+        topK = 8, graphDepth = 2, tenant_id, workspace_id,
+        scopedDocumentIds, agentVkgDbs = [], history = [],
+        entityHints = [], memoryContext = null, agentId = null,
+        userId = 'default', agentOntologies = []
+      } = options;
+
+      const results = {};
+      const promises = [];
+
+      if (plan.sources.includes('vector')) {
+        promises.push(
+          (async () => {
+            try {
+              console.log('   📊 Retrieving: vector search...');
+              const searchFilters = { tenant_id, workspace_id };
+              if (scopedDocumentIds) searchFilters.documentIds = scopedDocumentIds;
+              let chunks = await vectorStoreService.semanticSearch(query, topK, searchFilters);
+              chunks = await this.enrichChunksWithDocNames(chunks);
+              results.vector = { chunks };
+              console.log(`   📊 Vector: ${chunks.length} chunks`);
+            } catch (e) {
+              console.warn('   ⚠️ Vector retrieval failed:', e.message);
+              results.vector = { chunks: [] };
+            }
+          })()
+        );
+      }
+
+      if (plan.sources.includes('graph')) {
+        promises.push(
+          (async () => {
+            try {
+              console.log('   🔗 Retrieving: ontology-guided Neo4j graph query...');
+              // Step 1: Fetch ontology schema from GraphDB (if available) to guide the query
+              let ontologySchema = null;
+              try {
+                ontologySchema = await this.getGraphDBSchema(tenant_id, workspace_id, agentOntologies);
+                if (ontologySchema.classes.length > 0) {
+                  console.log(`   🔗 Ontology loaded: ${ontologySchema.classes.length} classes, ${ontologySchema.properties.length} properties`);
+                }
+              } catch (e) {
+                console.log('   🔗 No ontology available, using keyword-based graph search');
+              }
+
+              // Step 2: If ontology is available, generate a Cypher query guided by the schema
+              if (ontologySchema && ontologySchema.classes.length > 0) {
+                const ontologyResult = await this._ontologyGuidedGraphQuery(query, ontologySchema, entityHints, {
+                  workspace_id, graphDepth, history
+                });
+                results.graph = ontologyResult;
+                console.log(`   🔗 Graph (ontology-guided): ${ontologyResult.concepts.length} concepts, ${ontologyResult.relations.length} relations`);
+              } else {
+                // Fallback: keyword-based graph traversal (no ontology)
+                const searchTerms = entityHints.length > 0 ? entityHints : this.extractKeyTermsFallback(query);
+                const graphContext = await this.getGraphContext(searchTerms, graphDepth, { workspace_id });
+                results.graph = graphContext;
+                console.log(`   🔗 Graph (keyword): ${graphContext.concepts.length} concepts, ${graphContext.relations.length} relations`);
+              }
+            } catch (e) {
+              console.warn('   ⚠️ Graph retrieval failed:', e.message);
+              results.graph = { concepts: [], relatedChunks: [], relations: [] };
+            }
+          })()
+        );
+      }
+
+      if (plan.sources.includes('vkg') && agentVkgDbs.length > 0) {
+        promises.push(
+          (async () => {
+            try {
+              console.log('   🌐 Retrieving: VKG ontology-guided federated query...');
+              const vkgQueryService = require('./vkgQueryService');
+              const vkgResult = await vkgQueryService.query(query, tenant_id, workspace_id, {
+                databases: agentVkgDbs
+              });
+              results.vkg = {
+                answer: vkgResult.answer,
+                sql: vkgResult.citations?.sql,
+                databases: vkgResult.citations?.databases || [],
+                rowCount: vkgResult.execution_stats?.rows_returned || 0,
+                contextGraph: vkgResult.context_graph,
+                reasoningTrace: vkgResult.reasoning_trace
+              };
+              console.log(`   🌐 VKG: ${results.vkg.rowCount} rows`);
+            } catch (e) {
+              console.warn('   ⚠️ VKG retrieval failed:', e.message);
+              results.vkg = { answer: '', sql: null, databases: [], rowCount: 0 };
+            }
+          })()
+        );
+      }
+
+      if (plan.sources.includes('memory') && agentId) {
+        promises.push(
+          (async () => {
+            try {
+              console.log('   🧠 Retrieving: memory recall...');
+              const memoryService = require('./memoryService');
+              const memories = await memoryService.searchMemories(agentId, userId, query, 5);
+              results.memory = { memories };
+              console.log(`   🧠 Memory: ${memories.length} recalled`);
+            } catch (e) {
+              console.warn('   ⚠️ Memory retrieval failed:', e.message);
+              results.memory = { memories: [] };
+            }
+          })()
+        );
+      }
+
+      await Promise.all(promises);
+      return results;
+    }
+
+  /**
+   * Fuse results from multiple retrieval sources into a single ranked context.
+   * Handles deduplication, cross-source entity boosting, and token budget allocation.
+   */
+  _fuseContext(retrievalResults, plan, options = {}) {
+      const { memoryContext = null, maxTokenBudget = 6000 } = options;
+      const sourcesUsed = [];
+
+      // ── Collect all chunks ──
+      const chunkMap = new Map();
+
+      if (retrievalResults.vector?.chunks?.length > 0) {
+        sourcesUsed.push('vector');
+        for (const chunk of retrievalResults.vector.chunks) {
+          const key = chunk.chunkId || `${chunk.documentId}_${chunk.chunkIndex}`;
+          chunkMap.set(key, {
+            ...chunk,
+            source: 'vector',
+            relevanceScore: chunk.similarity || 0.5
+          });
+        }
+      }
+
+      if (retrievalResults.graph?.relatedChunks?.length > 0) {
+        for (const item of retrievalResults.graph.relatedChunks) {
+          const chunk = item.chunk;
+          const key = chunk.chunk_id || chunk.uri;
+          if (chunkMap.has(key)) {
+            const existing = chunkMap.get(key);
+            existing.relevanceScore = Math.min(existing.relevanceScore + 0.15, 1.0);
+            existing.source = 'both';
+          } else {
+            chunkMap.set(key, {
+              chunkId: chunk.chunk_id,
+              text: chunk.text,
+              documentName: item.docTitle,
+              source: 'graph',
+              relevanceScore: 0.6
+            });
+          }
+        }
+      }
+
+      // ── Collect all entities (from Neo4j graph, ontology-guided) ──
+      const entityMap = new Map();
+
+      if (retrievalResults.graph?.concepts?.length > 0) {
+        sourcesUsed.push('graph');
+        for (const item of retrievalResults.graph.concepts) {
+          const c = item.concept;
+          if (!c?.label) continue;
+          const key = c.label.toLowerCase();
+          entityMap.set(key, {
+            label: c.label,
+            type: c.type || 'Concept',
+            description: c.description || '',
+            source: 'graph',
+            relations: item.relations || [],
+            score: item.score || 0.5,
+            boosted: false
+          });
+        }
+      }
+
+      // Memory entity cross-linking
+      if (retrievalResults.memory?.memories?.length > 0) {
+        sourcesUsed.push('memory');
+        for (const mem of retrievalResults.memory.memories) {
+          const memContent = (mem.content || '').toLowerCase();
+          for (const [key, entity] of entityMap) {
+            if (memContent.includes(key) || memContent.includes(entity.label?.toLowerCase())) {
+              entity.score = Math.min((entity.score || 0.5) + 0.15, 1.0);
+              entity.boosted = true;
+            }
+          }
+        }
+      }
+
+      if (retrievalResults.vkg?.rowCount > 0) {
+        sourcesUsed.push('vkg');
+      }
+
+      // ── Collect all relations (from Neo4j graph) ──
+      const relationMap = new Map();
+      for (const rel of (retrievalResults.graph?.relations || [])) {
+        const key = `${rel.source}|${rel.predicate || rel.type}|${rel.target}`;
+        if (!relationMap.has(key)) relationMap.set(key, rel);
+      }
+
+      // ── Rank and budget ──
+      const chunks = Array.from(chunkMap.values())
+        .sort((a, b) => b.relevanceScore - a.relevanceScore)
+        .slice(0, this.maxContextChunks);
+
+      const entities = Array.from(entityMap.values())
+        .sort((a, b) => b.score - a.score)
+        .slice(0, this.maxGraphNodes);
+
+      const relations = Array.from(relationMap.values()).slice(0, 20);
+
+      return {
+        chunks, entities, relations, sourcesUsed,
+        // Pass through raw graph results for the answer LLM (full node properties)
+        graphRawResults: retrievalResults.graph?.rawResults || [],
+        graphCypher: retrievalResults.graph?.cypher || ''
+      };
+    }
+
+  /**
+   * Build a unified context string from fused results for the final LLM call.
+   */
+  _buildUnifiedContextString(fused, plan) {
+    let context = '';
+
+    if (fused.chunks.length > 0) {
+      context += '=== DOCUMENT EXCERPTS ===\n\n';
+      for (const chunk of fused.chunks) {
+        const sourceTag = chunk.source === 'both' ? '📊+🔗' : (chunk.source === 'vector' ? '📊' : '🔗');
+        const header = `--- ${chunk.documentName || 'Document'} ${sourceTag} ---\n`;
+        const text = (chunk.text || '').substring(0, 500);
+        context += header + text + '\n\n';
+      }
+    }
+
+    // If we have raw graph query results (full node properties), use those
+    // instead of the lossy entity summaries — this gives the answer LLM
+    // the complete data just like the main chat's graph-only mode.
+    if (fused.graphRawResults?.length > 0) {
+      context += '\n=== NEO4J QUERY RESULTS ===\n\n';
+      if (fused.graphCypher) context += `Cypher: ${fused.graphCypher}\n\n`;
+      const resultsJson = JSON.stringify(fused.graphRawResults.slice(0, 30), null, 2);
+      // Budget: cap at ~3000 chars to leave room for other context
+      context += resultsJson.substring(0, 3000);
+      if (resultsJson.length > 3000) context += '\n... (truncated)';
+      context += '\n\n';
+    } else if (fused.entities.length > 0) {
+      context += '\n=== KNOWLEDGE GRAPH ===\n\n';
+      const byType = {};
+      for (const e of fused.entities) {
+        const type = e.type || 'Concept';
+        if (!byType[type]) byType[type] = [];
+        byType[type].push(e);
+      }
+      for (const [type, entities] of Object.entries(byType)) {
+        context += `[${type}s]\n`;
+        for (const e of entities) {
+          const boost = e.boosted ? ' ⭐' : '';
+          context += `• ${e.label}${boost}`;
+          if (e.description) context += `: ${e.description}`;
+          context += ` (from: ${e.source})\n`;
+          if (e.relations) {
+            for (const rel of e.relations.slice(0, 3)) {
+              if (rel.concept) {
+                context += `  → ${rel.predicate || rel.type || 'relates to'}: ${rel.concept}\n`;
+              }
+            }
+          }
+        }
+        context += '\n';
+      }
+    }
+
+    if (fused.relations.length > 0) {
+      context += '\n=== KEY RELATIONSHIPS ===\n';
+      const seen = new Set();
+      for (const rel of fused.relations.slice(0, 12)) {
+        if (rel.source && rel.target) {
+          const str = `${rel.source} --[${rel.predicate || rel.type}]--> ${rel.target}`;
+          if (!seen.has(str)) {
+            seen.add(str);
+            context += `• ${str}\n`;
+          }
+        }
+      }
+    }
+
+    return context;
+  }
+
+  /**
+   * Fallback to the original single-mode query path if the unified pipeline fails.
+   */
+  async _fallbackSingleMode(question, options = {}) {
+    const agent = options.agent || {};
+    const searchMode = agent.search_mode || 'hybrid';
+    const queryOptions = {
+      searchMode,
+      topK: agent.settings?.topK || 8,
+      graphDepth: agent.settings?.graphDepth || 2,
+      tenant_id: options.tenant_id || 'default',
+      workspace_id: options.workspace_id || 'default',
+      history: options.history || [],
+      documentIds: options.scopedDocumentIds
+    };
+
+    let prefix = '';
+    if (agent.perspective) prefix += `[Agent Perspective: ${agent.perspective}]\n\n`;
+    if (options.memoryContext) prefix += options.memoryContext + '\n\n';
+
+    return this.query(prefix + question, queryOptions);
   }
 
   /**
@@ -470,68 +1212,103 @@ Provide a clear, concise answer. Format lists and data nicely.`
   /**
    * Get GraphDB schema info for SPARQL generation
    */
-  async getGraphDBSchema(tenantId, workspaceId) {
-    const graphDBStore = require('./graphDBStore');
-    console.log('GraphDB store baseUrl:', graphDBStore.baseUrl, 'repo:', graphDBStore.repository);
-    try {
-      // Query classes with full IRIs
-      const classesQuery = `
-        PREFIX owl: <http://www.w3.org/2002/07/owl#>
-        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-        SELECT DISTINCT ?class ?label WHERE {
-          GRAPH ?g {
-            ?class a owl:Class .
-            OPTIONAL { ?class rdfs:label ?label }
+  async getGraphDBSchema(tenantId, workspaceId, agentOntologies = []) {
+      const graphDBStore = require('./graphDBStore');
+      console.log('GraphDB store baseUrl:', graphDBStore.baseUrl, 'repo:', graphDBStore.repository);
+      try {
+        // Build FROM clauses scoped to agent's ontologies (if specified)
+        let fromClause = '';
+        if (agentOntologies.length > 0) {
+          const fromParts = [];
+          for (const ont of agentOntologies) {
+            const ontId = ont.id || ont.name;
+            if (ont.graphIRI) {
+              fromParts.push(`FROM <${ont.graphIRI}>`);
+            } else {
+              // Try both global and workspace-scoped graph IRIs
+              fromParts.push(`FROM <http://example.org/graphs/global/ontology/${ontId}>`);
+              fromParts.push(`FROM <http://purplefabric.ai/graphs/tenant/${tenantId}/workspace/${workspaceId}/ontology/${ontId}>`);
+            }
           }
-        } LIMIT 50
-      `;
-      // Query properties with full IRIs, type, and domain/range
-      const propsQuery = `
-        PREFIX owl: <http://www.w3.org/2002/07/owl#>
-        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-        SELECT DISTINCT ?prop ?label ?type ?domain ?range WHERE {
-          GRAPH ?g {
-            { ?prop a owl:ObjectProperty BIND("objectProperty" as ?type) }
-            UNION
-            { ?prop a owl:DatatypeProperty BIND("datatypeProperty" as ?type) }
-            OPTIONAL { ?prop rdfs:label ?label }
-            OPTIONAL { ?prop rdfs:domain ?domain }
-            OPTIONAL { ?prop rdfs:range ?range }
-          }
-        } LIMIT 100
-      `;
-      
-      const [classesRes, propsRes] = await Promise.all([
-        graphDBStore.executeSPARQL(tenantId, workspaceId, classesQuery, 'all'),
-        graphDBStore.executeSPARQL(tenantId, workspaceId, propsQuery, 'all')
-      ]);
-      
-      console.log('Schema query raw results:', JSON.stringify(classesRes?.results?.bindings?.slice(0, 3)));
-      
-      const classes = (classesRes?.results?.bindings || []).map(b => ({
-        iri: b.class?.value,
-        label: b.label?.value || b.class?.value?.split('#').pop() || b.class?.value?.split('/').pop()
-      }));
-      
-      const properties = (propsRes?.results?.bindings || []).map(b => ({
-        iri: b.prop?.value,
-        name: b.label?.value || b.prop?.value?.split('#').pop() || b.prop?.value?.split('/').pop(),
-        type: b.type?.value || 'datatypeProperty',
-        domain: b.domain?.value?.split('#').pop() || b.domain?.value?.split('/').pop() || 'Unknown',
-        range: b.range?.value?.split('#').pop() || b.range?.value?.split('/').pop() || null
-      }));
-      
-      console.log(`📊 Schema loaded: ${classes.length} classes, ${properties.length} properties`);
-      if (classes.length === 0) {
-        console.warn('⚠️ No classes found in schema - LLM will generate generic queries');
+          // Also include the workspace schema graph (for workspace-level ontology definitions)
+          fromParts.push(`FROM <http://purplefabric.ai/graphs/tenant/${tenantId}/workspace/${workspaceId}/schema>`);
+          fromClause = fromParts.join('\n');
+          console.log(`📊 Schema query scoped to ${agentOntologies.length} agent ontologies`);
+        }
+
+        // Query classes — scoped to agent ontologies if available
+        const classesQuery = agentOntologies.length > 0
+          ? `PREFIX owl: <http://www.w3.org/2002/07/owl#>
+             PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+             SELECT DISTINCT ?class ?label
+             ${fromClause}
+             WHERE {
+               ?class a owl:Class .
+               OPTIONAL { ?class rdfs:label ?label }
+             } LIMIT 50`
+          : `PREFIX owl: <http://www.w3.org/2002/07/owl#>
+             PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+             SELECT DISTINCT ?class ?label WHERE {
+               ?class a owl:Class .
+               OPTIONAL { ?class rdfs:label ?label }
+             } LIMIT 50`;
+
+        // Query properties — scoped to agent ontologies if available
+        const propsQuery = agentOntologies.length > 0
+          ? `PREFIX owl: <http://www.w3.org/2002/07/owl#>
+             PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+             SELECT DISTINCT ?prop ?label ?type ?domain ?range
+             ${fromClause}
+             WHERE {
+               { ?prop a owl:ObjectProperty BIND("objectProperty" as ?type) }
+               UNION
+               { ?prop a owl:DatatypeProperty BIND("datatypeProperty" as ?type) }
+               OPTIONAL { ?prop rdfs:label ?label }
+               OPTIONAL { ?prop rdfs:domain ?domain }
+               OPTIONAL { ?prop rdfs:range ?range }
+             } LIMIT 100`
+          : `PREFIX owl: <http://www.w3.org/2002/07/owl#>
+             PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+             SELECT DISTINCT ?prop ?label ?type ?domain ?range WHERE {
+               { ?prop a owl:ObjectProperty BIND("objectProperty" as ?type) }
+               UNION
+               { ?prop a owl:DatatypeProperty BIND("datatypeProperty" as ?type) }
+               OPTIONAL { ?prop rdfs:label ?label }
+               OPTIONAL { ?prop rdfs:domain ?domain }
+               OPTIONAL { ?prop rdfs:range ?range }
+             } LIMIT 100`;
+
+        const [classesRes, propsRes] = await Promise.all([
+          graphDBStore.executeSPARQL(tenantId, workspaceId, classesQuery, 'schema'),
+          graphDBStore.executeSPARQL(tenantId, workspaceId, propsQuery, 'schema')
+        ]);
+
+        console.log('Schema query raw results:', JSON.stringify(classesRes?.results?.bindings?.slice(0, 3)));
+
+        const classes = (classesRes?.results?.bindings || []).map(b => ({
+          iri: b.class?.value,
+          label: b.label?.value || b.class?.value?.split('#').pop() || b.class?.value?.split('/').pop()
+        }));
+
+        const properties = (propsRes?.results?.bindings || []).map(b => ({
+          iri: b.prop?.value,
+          name: b.label?.value || b.prop?.value?.split('#').pop() || b.prop?.value?.split('/').pop(),
+          type: b.type?.value || 'datatypeProperty',
+          domain: b.domain?.value?.split('#').pop() || b.domain?.value?.split('/').pop() || 'Unknown',
+          range: b.range?.value?.split('#').pop() || b.range?.value?.split('/').pop() || null
+        }));
+
+        console.log(`📊 Schema loaded: ${classes.length} classes, ${properties.length} properties`);
+        if (classes.length === 0) {
+          console.warn('⚠️ No classes found in schema - LLM will generate generic queries');
+        }
+
+        return { classes, properties };
+      } catch (e) {
+        console.error('Could not fetch GraphDB schema:', e.message, e.stack);
+        return { classes: [], properties: [] };
       }
-      
-      return { classes, properties };
-    } catch (e) {
-      console.error('Could not fetch GraphDB schema:', e.message, e.stack);
-      return { classes: [], properties: [] };
     }
-  }
 
   /**
    * Discover entity types and predicates from the workspace data graph
@@ -1515,6 +2292,272 @@ CRITICAL RULES:
       return { concepts: [], relatedChunks: [], relations: [] };
     }
   }
+
+    /**
+     * Ontology-guided Neo4j graph query.
+     * Uses ontology schema from GraphDB to understand the data model,
+     * then generates a targeted Cypher query against Neo4j.
+     *
+     * GraphDB = schema store (classes, properties, relationships)
+     * Neo4j = data store (entity instances, relationship instances)
+     */
+    async _ontologyGuidedGraphQuery(question, ontologySchema, entityHints = [], options = {}) {
+      const { workspace_id = 'default', graphDepth = 2, history = [] } = options;
+
+      // Build a concise ontology description — only entity types and relationships.
+      // Data properties are omitted because the Neo4j schema (below) has the REAL
+      // property names with sample values, which is what the LLM needs for Cypher.
+      const classDescriptions = (ontologySchema.classes || []).slice(0, 20).map(c => {
+        return c.label || c.iri?.split(/[#/]/).pop() || 'Unknown';
+      });
+
+      // Only object properties (relationships) — these tell the LLM how entities connect
+      const relDescriptions = (ontologySchema.properties || [])
+        .filter(p => p.type === 'objectProperty')
+        .slice(0, 30)
+        .map(p => {
+          const name = p.name || p.label || p.iri?.split(/[#/]/).pop() || 'Unknown';
+          const domain = p.domain || 'Any';
+          const range = p.range || 'Entity';
+          return `${domain} —[${name}]→ ${range}`;
+        });
+
+      // Get the FULL Neo4j schema with sample values — this is the primary source
+      // for Cypher generation (exact property names, exact values, exact relationships)
+      let neo4jSchemaText = '';
+      try {
+        const schema = await neo4jService.getSchema();
+        neo4jSchemaText = neo4jService.formatSchemaForLLM(schema);
+      } catch { /* Neo4j schema unavailable */ }
+
+      const wsFilter = workspace_id
+        ? `\nWORKSPACE ISOLATION (MANDATORY):\n- EVERY query MUST include: WHERE n.workspace_id = '${workspace_id}' (on ALL matched nodes)\n- This ensures data isolation between workspaces. NEVER omit this filter.\n`
+        : '';
+
+      // Build conversation history for context resolution
+      let historyContext = '';
+      if (history.length > 0) {
+        const recentHistory = history.slice(-4).map(m => `${m.role}: ${(m.content || '').substring(0, 300)}`).join('\n');
+        historyContext = `\n  RECENT CONVERSATION (use to resolve references like "this customer", "their", "Joy Harris", etc.):\n  ${recentHistory}\n`;
+      }
+
+      const cypherPrompt = `You are a Neo4j Cypher expert. Generate a Cypher query to answer the user's question.
+
+  ONTOLOGY (semantic model — how entity types relate to each other):
+  Entity types: ${classDescriptions.join(', ') || 'Unknown'}
+  ${relDescriptions.length > 0 ? `Semantic relationships:\n  ${relDescriptions.join('\n  ')}` : ''}
+
+  ${neo4jSchemaText ? `${neo4jSchemaText}\n` : ''}
+  ${wsFilter}
+  ENTITY HINTS from the question: ${entityHints.join(', ') || 'none'}
+  ${historyContext}
+
+  CRITICAL RULES:
+  1. ONLY use relationships from the "Connection Patterns" section — those are the ONLY relationships that exist in Neo4j
+  2. MATCH the EXACT direction shown in patterns: (A)-[:REL]->(B) means A points to B, never reverse it
+  3. Use EXACT property names (case-sensitive) and EXACT sample values shown in the Neo4j schema
+  4. Property names like "customerId", "accountId" are DATA PROPERTIES on nodes, NOT relationship types
+  5. If schema shows numeric-looking strings like "0", "1", use string comparison: WHERE n.prop = "1"
+  6. If no sample values match the user's intent, use CONTAINS or toLower() for flexible text matching
+  7. When the user mentions an entity by name/ID, check the EXACT VALUES in the schema to find the correct format
+  8. Always filter by workspace: WHERE n.workspace_id = '${workspace_id}' on ALL matched nodes
+  9. LIMIT results to 25 max
+  10. Return entity labels, types, and relationship info
+  11. For entity lookups, try multiple matching strategies: exact ID, concept_id, and case-insensitive label match
+  12. The "Ontology" section shows the semantic model. The "Neo4j Graph Schema" section shows the ACTUAL data. When they conflict, trust the Neo4j schema.
+  13. If the question is a follow-up, use the RECENT CONVERSATION to resolve references. For example, if the user previously asked about "CUST000022" and now asks "what about their loans", query Loan entities connected to CUST000022.
+
+  Return ONLY the Cypher query, no explanation.
+
+  QUESTION: ${question}`;
+
+      let concepts = [];
+      let relations = [];
+      let relatedChunks = [];
+      let rawResults = [];
+      let cleanCypher = '';
+
+      try {
+        // Generate Cypher from ontology + question
+        const cypher = await this._llmChat([
+          { role: 'user', content: cypherPrompt }
+        ], { temperature: 0.1, maxTokens: 800 });
+
+        cleanCypher = cypher.trim();
+        if (cleanCypher.includes('```')) {
+          cleanCypher = cleanCypher.replace(/```cypher?\n?/g, '').replace(/```/g, '').trim();
+        }
+        // Strip preamble text before MATCH/CALL/WITH
+        const cypherStart = cleanCypher.match(/(MATCH|CALL|WITH|OPTIONAL|UNWIND)\s/i);
+        if (cypherStart && cypherStart.index > 0) {
+          cleanCypher = cleanCypher.substring(cypherStart.index).trim();
+        }
+
+        console.log(`   🔗 Generated Cypher:\n      ${cleanCypher.split('\n').join('\n      ')}`);
+
+        // Execute against Neo4j
+        const session = neo4jService.getSession();
+        try {
+          const result = await session.run(cleanCypher);
+          const records = result.records || [];
+          console.log(`   🔗 Cypher returned ${records.length} records`);
+
+          // Serialize raw results for the answer LLM (preserves all node properties)
+          rawResults = [];
+
+          // Helper: convert Neo4j Integer objects to plain numbers
+          const toPlain = (val) => {
+            if (val === null || val === undefined) return val;
+            if (typeof val === 'number' || typeof val === 'string' || typeof val === 'boolean') return val;
+            if (typeof val?.toNumber === 'function') return val.toNumber();
+            if (typeof val?.low !== 'undefined' && typeof val?.high !== 'undefined') return val.low;
+            return val;
+          };
+          const nodeToObj = (v) => {
+            if (!v || typeof v !== 'object') return toPlain(v);
+            if (v.labels) {
+              const props = {};
+              for (const [k, pv] of Object.entries(v.properties || {})) props[k] = toPlain(pv);
+              return { _labels: v.labels, ...props };
+            }
+            if (v.type && v.startNodeElementId) {
+              const props = {};
+              for (const [k, pv] of Object.entries(v.properties || {})) props[k] = toPlain(pv);
+              return { _type: v.type, ...props };
+            }
+            if (v.properties) {
+              const props = {};
+              for (const [k, pv] of Object.entries(v.properties)) props[k] = toPlain(pv);
+              return props;
+            }
+            return v;
+          };
+
+          for (const record of records) {
+            const row = {};
+            for (const key of record.keys) {
+              const val = record.get(key);
+              if (val && typeof val === 'object' && val.labels) {
+                row[key] = nodeToObj(val);
+              } else if (val && typeof val === 'object' && val.type && val.startNodeElementId) {
+                row[key] = nodeToObj(val);
+              } else if (Array.isArray(val)) {
+                row[key] = val.map(v => nodeToObj(v));
+              } else if (val && typeof val === 'object' && val.segments) {
+                row[key] = val.segments.map(seg => ({
+                  start: nodeToObj(seg.start),
+                  rel: seg.relationship?.type,
+                  end: nodeToObj(seg.end)
+                }));
+              } else {
+                row[key] = toPlain(val);
+              }
+            }
+            rawResults.push(row);
+          }
+
+          // Parse results into concepts and relations (for entity display in UI)
+          const conceptMap = new Map();
+          for (const record of records) {
+            const keys = record.keys;
+            for (const key of keys) {
+              const val = record.get(key);
+              if (val && typeof val === 'object' && val.labels) {
+                // It's a node
+                const label = val.properties?.rdfs__label || val.properties?.name || val.properties?.label || 'Unknown';
+                const type = val.labels?.[0] || 'Entity';
+                const uri = val.properties?.uri || val.elementId;
+                if (!conceptMap.has(label)) {
+                  conceptMap.set(label, {
+                    concept: { label, type, uri, description: '' },
+                    relations: [],
+                    score: 0.7
+                  });
+                }
+              } else if (val && typeof val === 'object' && val.type) {
+                // It's a relationship
+                relations.push({
+                  source: val.startNodeElementId,
+                  predicate: val.type,
+                  target: val.endNodeElementId
+                });
+              } else if (val && typeof val === 'string') {
+                // It's a scalar value — might be a label
+                // Skip, handled by node properties
+              }
+            }
+
+            // Also try to extract relationship patterns from path-like results
+            for (const key of keys) {
+              const val = record.get(key);
+              if (val && val.segments) {
+                // It's a path
+                for (const seg of val.segments) {
+                  const startLabel = seg.start?.properties?.rdfs__label || seg.start?.properties?.name || 'Unknown';
+                  const endLabel = seg.end?.properties?.rdfs__label || seg.end?.properties?.name || 'Unknown';
+                  relations.push({
+                    source: startLabel,
+                    predicate: seg.relationship?.type || 'RELATED_TO',
+                    target: endLabel
+                  });
+                  if (!conceptMap.has(startLabel)) {
+                    conceptMap.set(startLabel, {
+                      concept: { label: startLabel, type: seg.start?.labels?.[0] || 'Entity', uri: seg.start?.properties?.uri },
+                      relations: [],
+                      score: 0.6
+                    });
+                  }
+                  if (!conceptMap.has(endLabel)) {
+                    conceptMap.set(endLabel, {
+                      concept: { label: endLabel, type: seg.end?.labels?.[0] || 'Entity', uri: seg.end?.properties?.uri },
+                      relations: [],
+                      score: 0.6
+                    });
+                  }
+                }
+              }
+            }
+          }
+
+          concepts = Array.from(conceptMap.values());
+
+          // Attach relations to concepts
+          for (const rel of relations) {
+            for (const [, concept] of conceptMap) {
+              if (concept.concept.label === rel.source || concept.concept.uri === rel.source) {
+                concept.relations.push({ predicate: rel.predicate, concept: rel.target });
+              }
+            }
+          }
+
+          // Resolve relation source/target from elementIds to labels
+          const elementIdToLabel = new Map();
+          for (const record of records) {
+            for (const key of record.keys) {
+              const val = record.get(key);
+              if (val && val.labels && val.elementId) {
+                elementIdToLabel.set(val.elementId, val.properties?.rdfs__label || val.properties?.name || 'Unknown');
+              }
+            }
+          }
+          relations = relations.map(r => ({
+            source: elementIdToLabel.get(r.source) || r.source,
+            predicate: r.predicate,
+            target: elementIdToLabel.get(r.target) || r.target
+          }));
+
+        } finally {
+          await session.close();
+        }
+      } catch (e) {
+        console.warn(`   ⚠️ Ontology-guided Cypher failed: ${e.message}, falling back to keyword search`);
+        // Fallback to keyword-based search
+        const searchTerms = entityHints.length > 0 ? entityHints : this.extractKeyTermsFallback(question);
+        return this.getGraphContext(searchTerms, graphDepth, { workspace_id });
+      }
+
+      return { concepts, relatedChunks, relations, rawResults, cypher: cleanCypher };
+    }
 
   /**
    * Enrich chunks with document names from Neo4j if missing

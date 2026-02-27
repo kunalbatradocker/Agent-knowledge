@@ -504,6 +504,19 @@ class OWLOntologyService {
       const classes = [];
       const properties = [];
 
+      // First pass: collect classes so we can resolve domain/range labels
+      const classMap = new Map(); // localName → label (for domain/range label resolution)
+
+      for (const binding of result.results.bindings) {
+        if (binding.type.value === 'class') {
+          const localName = binding.iri.value.split(/[#/]/).pop();
+          const label = binding.label?.value || localName;
+          classMap.set(localName, label);
+          // Also index by normalized form for fuzzy matching
+          classMap.set(localName.toLowerCase(), label);
+        }
+      }
+
       for (const binding of result.results.bindings) {
         const item = {
           iri: binding.iri.value,
@@ -521,18 +534,26 @@ class OWLOntologyService {
           item.type = 'datatypeProperty';
           if (binding.domain) {
             item.domain = binding.domain.value.split(/[#/]/).pop();
+            // Resolve domain local name to class label for downstream matching
+            item.domainLabel = classMap.get(item.domain) || classMap.get(item.domain.toLowerCase()) || item.domain;
           }
           if (binding.range) {
-            item.range = binding.range.value.split(/[#/]/).pop();
+            const rangeLocal = binding.range.value.split(/[#/]/).pop();
+            // Fix generic "Literal" range → default to "string"
+            item.range = (rangeLocal === 'Literal') ? 'string' : rangeLocal;
           }
           properties.push(item);
         } else if (binding.type.value === 'objectProperty') {
           item.type = 'objectProperty';
           if (binding.domain) {
             item.domain = binding.domain.value.split(/[#/]/).pop();
+            item.domainLabel = classMap.get(item.domain) || classMap.get(item.domain.toLowerCase()) || item.domain;
           }
           if (binding.range) {
-            item.range = binding.range.value.split(/[#/]/).pop();
+            const rangeLocal = binding.range.value.split(/[#/]/).pop();
+            item.range = rangeLocal;
+            // Resolve range to class label for object properties
+            item.rangeLabel = classMap.get(rangeLocal) || classMap.get(rangeLocal.toLowerCase()) || rangeLocal;
           }
           properties.push(item);
         } else if (binding.type.value === 'untypedProperty') {
@@ -543,9 +564,14 @@ class OWLOntologyService {
           item.type = isDatatype ? 'datatypeProperty' : 'objectProperty';
           if (binding.domain) {
             item.domain = binding.domain.value.split(/[#/]/).pop();
+            item.domainLabel = classMap.get(item.domain) || classMap.get(item.domain.toLowerCase()) || item.domain;
           }
           if (binding.range) {
-            item.range = binding.range.value.split(/[#/]/).pop();
+            const rangeLocal = binding.range.value.split(/[#/]/).pop();
+            item.range = (rangeLocal === 'Literal') ? 'string' : rangeLocal;
+            if (!isDatatype) {
+              item.rangeLabel = classMap.get(rangeLocal) || classMap.get(rangeLocal.toLowerCase()) || rangeLocal;
+            }
           }
           properties.push(item);
         }

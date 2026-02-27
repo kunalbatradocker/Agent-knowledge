@@ -94,7 +94,7 @@
 
 <h1>Purple Fabric — Technical Architecture Document</h1>
 <div class="meta">
-  <strong>Version:</strong> 2.0 &nbsp;|&nbsp;
+  <strong>Version:</strong> 3.0 &nbsp;|&nbsp;
   <strong>Date:</strong> February 2026 &nbsp;|&nbsp;
   <strong>Classification:</strong> Internal — Technical Leadership
 </div>
@@ -107,9 +107,13 @@
   <li><a href="#databases">Database Responsibilities</a></li>
   <li><a href="#multitenant">Multi-Tenant Architecture</a></li>
   <li><a href="#auth">Authentication &amp; Authorization</a></li>
+  <li><a href="#services">Two Independent Services: RAG &amp; KG Enrichment</a></li>
   <li><a href="#pipeline">Document Processing Pipeline</a></li>
   <li><a href="#sync">GraphDB → Neo4j Sync</a></li>
-  <li><a href="#rag">Graph RAG Query Flow</a></li>
+  <li><a href="#agents">Agent Architecture</a></li>
+  <li><a href="#unified">Unified Agent Query Pipeline</a></li>
+  <li><a href="#memory">Agent Long-Term Memory</a></li>
+  <li><a href="#vkg">Virtual Knowledge Graph (VKG)</a></li>
   <li><a href="#versioning">Ontology Versioning</a></li>
   <li><a href="#viz">Entity Visualization</a></li>
   <li><a href="#deploy">Deployment Architecture</a></li>
@@ -125,8 +129,10 @@
 
 <!-- Section 1: Executive Summary -->
 <h2 id="exec">1. Executive Summary</h2>
-<p>Purple Fabric is an enterprise-grade, multi-tenant knowledge graph platform that combines semantic web technologies (OWL/RDF/SPARQL), property graph analytics (Neo4j), vector embeddings (Redis), and AI-powered document processing (AWS Bedrock / OpenAI / Ollama) into a unified system for automated knowledge extraction, ontology management, and conversational graph querying.</p>
-<p>The platform ingests structured (CSV/Excel) and unstructured (PDF/text) documents, extracts entities and relationships using LLM-powered pipelines, stores them as RDF triples in GraphDB with full ontology conformance, syncs to Neo4j for graph analytics and visualization, and provides a Graph RAG conversational interface for natural-language querying across the knowledge graph.</p>
+<p>Purple Fabric is an enterprise-grade, multi-tenant knowledge graph platform that combines semantic web technologies (OWL/RDF/SPARQL), property graph analytics (Neo4j), vector embeddings (Redis), AI-powered document processing (AWS Bedrock / OpenAI / Ollama), and federated SQL querying (Trino) into a unified system for automated knowledge extraction, ontology management, and intelligent conversational agents.</p>
+<p>The platform ingests structured (CSV/Excel) and unstructured (PDF/text) documents through two independent services: <strong>Service A (RAG)</strong> handles chunking and embedding at upload time for immediate semantic search, while <strong>Service B (KG Enrichment)</strong> optionally extracts entities and relationships using LLM-powered pipelines, stores them as RDF triples in GraphDB with full ontology conformance, and syncs to Neo4j for graph analytics.</p>
+<p>Conversational AI agents provide the primary query interface. Each agent is configured with specific data sources (document folders, ontologies, VKG databases) and maintains long-term memory across sessions. When a user asks a question, the <strong>Unified Agent Query Pipeline</strong> uses an LLM-based planner to route the query across up to four parallel retrieval channels — vector search, ontology-guided graph traversal, federated SQL via VKG, and memory recall — then fuses the results into a single coherent response.</p>
+<p>Ontologies stored in GraphDB serve as the semantic backbone: they guide Neo4j graph queries, inform VKG SQL generation, and structure entity extraction. The <strong>Virtual Knowledge Graph (VKG)</strong> layer federates queries across external databases via Trino, using ontology-to-table mappings to translate natural language into SQL without requiring users to know the underlying schema.</p>
 
 <hr>
 
@@ -135,69 +141,53 @@
 <pre><code>┌─────────────────────────────────────────────────────────────────────────┐
 │                        CLIENT (React SPA)                               │
 │  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌──────────┐ │
-│  │ Knowledge │ │   Data    │ │ Ontology  │ │   Jobs    │ │  Admin   │ │
-│  │ Assistant │ │Management │ │  Manager  │ │  Monitor  │ │  Panel   │ │
+│  │  Agents   │ │   Data    │ │ Ontology  │ │   Jobs    │ │  Admin   │ │
+│  │  (Chat)   │ │Management │ │  Manager  │ │  Monitor  │ │  Panel   │ │
 │  └─────┬─────┘ └─────┬─────┘ └─────┬─────┘ └─────┬─────┘ └────┬─────┘ │
 └────────┼──────────────┼─────────────┼─────────────┼────────────┼────────┘
          │              │             │             │            │
          ▼              ▼             ▼             ▼            ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                    NGINX REVERSE PROXY (Port 80/443)                    │
-│                    SSL Termination · Static Assets                      │
 └────────────────────────────────┬────────────────────────────────────────┘
                                  │
                                  ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                    EXPRESS.JS SERVER (Port 5002)                        │
-│                                                                         │
-│  ┌─── Middleware Stack ──────────────────────────────────────────────┐  │
-│  │ CORS → JSON Parser → CSRF → Rate Limiter → Activity Logger      │  │
-│  │ → JWT Auth → RBAC → Tenant Context                              │  │
+│  ┌─── Middleware ────────────────────────────────────────────────────┐  │
+│  │ CORS → JSON → CSRF → Rate Limiter → JWT Auth → RBAC → Tenant   │  │
 │  └──────────────────────────────────────────────────────────────────┘  │
-│                                                                         │
 │  ┌─── API Routes ───────────────────────────────────────────────────┐  │
-│  │ /api/auth      /api/owl         /api/sparql     /api/entities   │  │
-│  │ /api/chat      /api/ontology/*  /api/graph      /api/evidence   │  │
-│  │ /api/admin     /api/tenants     /api/metrics    /api/settings   │  │
+│  │ /api/auth  /api/agents/*  /api/owl  /api/ontology/*  /api/admin │  │
 │  └──────────────────────────────────────────────────────────────────┘  │
-│                                                                         │
 │  ┌─── Service Layer ────────────────────────────────────────────────┐  │
-│  │ GraphRAGService    ExtractionService    OWLOntologyService      │  │
-│  │ LLMService         ChunkingService      VersioningService       │  │
-│  │ EntityService      EmbeddingService     GraphDBTripleService    │  │
-│  │ SchemaAnalysis     DataProfileService   GraphDBNeo4jSyncService │  │
+│  │ GraphRAGService  MemoryService  VKGQueryService  LLMService     │  │
+│  │ VectorStoreService  ExtractionService  OWLOntologyService       │  │
 │  └──────────────────────────────────────────────────────────────────┘  │
-└────────────┬──────────────────┬──────────────────┬──────────────────────┘
-             │                  │                  │
-             ▼                  ▼                  ▼
-┌────────────────────┐ ┌────────────────┐ ┌────────────────────┐
-│     GraphDB        │ │     Neo4j      │ │      Redis         │
-│  (RDF Triplestore) │ │ (Property Graph│ │ (Vector Store +    │
-│                    │ │  + Analytics)  │ │  Cache + Queue)    │
-│  Port 7200         │ │  Port 7687     │ │  Port 6379         │
-│                    │ │                │ │                    │
-│ • Schema graphs    │ │ • Entity nodes │ │ • Vector embeddings│
-│ • Data graphs      │ │ • Relationships│ │ • Staging data     │
-│ • Audit graphs     │ │ • Graph viz    │ │ • Column mappings  │
-│ • Deprecated graphs│ │ • BFS traversal│ │ • Ontology versions│
-│ • Global ontologies│ │                │ │ • Session/auth     │
-│ • SPARQL engine    │ │                │ │ • BullMQ queues    │
-└────────────────────┘ └────────────────┘ └────────────────────┘</code></pre>
+└────────────┬──────────────┬──────────────┬──────────────┬───────────────┘
+             │              │              │              │
+             ▼              ▼              ▼              ▼
+┌──────────────────┐ ┌──────────────┐ ┌──────────────────┐ ┌─────────────┐
+│     GraphDB      │ │    Neo4j     │ │      Redis       │ │    Trino    │
+│ (Ontology/Schema)│ │(Entity Query)│ │(Vectors+Memory)  │ │(Federated   │
+│  Port 7200       │ │  Port 7687   │ │  Port 6379       │ │ SQL) :8080  │
+└──────────────────┘ └──────────────┘ └──────────────────┘ └─────────────┘</code></pre>
 
 <hr>
 
 <!-- Section 3: Database Responsibilities -->
 <h2 id="databases">3. Database Responsibilities (Separation of Concerns)</h2>
 
-<h3>3.1 GraphDB (Authoritative RDF Store)</h3>
+<h3>3.1 GraphDB (Ontology &amp; Schema Store)</h3>
 <table>
   <tr><th>Concern</th><th>Details</th></tr>
-  <tr><td>Role</td><td>Single source of truth for all semantic data</td></tr>
+  <tr><td>Role</td><td>Ontology definitions, schema management, VKG mapping annotations</td></tr>
   <tr><td>Format</td><td>RDF triples in Turtle (TTL) syntax</td></tr>
   <tr><td>Query</td><td>SPARQL 1.1</td></tr>
   <tr><td>Isolation</td><td>Named graphs per tenant/workspace/ontology</td></tr>
+  <tr><td>NOT used for</td><td>Direct answer generation — GraphDB is never queried for answers</td></tr>
 </table>
-
+<p>GraphDB provides the semantic backbone that guides all other query engines. It is the authoritative store for ontology definitions, which are consumed by Neo4j (for ontology-guided Cypher generation) and VKG (for ontology-to-SQL translation).</p>
 <p>Named graph IRI patterns:</p>
 <pre><code>Global ontology:     http://example.org/graphs/global/ontology/{ontologyId}
 Workspace schema:    http://purplefabric.ai/graphs/tenant/{t}/workspace/{w}/schema
@@ -205,49 +195,42 @@ Workspace data:      http://purplefabric.ai/graphs/tenant/{t}/workspace/{w}/data
 Audit graph:         http://purplefabric.ai/graphs/tenant/{t}/workspace/{w}/audit
 Deprecated graph:    http://purplefabric.ai/graphs/tenant/{t}/workspace/{w}/deprecated</code></pre>
 
-<p>What lives in GraphDB:</p>
-<ul>
-  <li>OWL ontology definitions (classes, object properties, datatype properties, restrictions)</li>
-  <li>Entity instance triples (rdf:type, rdfs:label, properties, relationships)</li>
-  <li>Document provenance (pf:sourceDocument links)</li>
-  <li>Audit/change events (who changed what, when)</li>
-  <li>Deprecated schema elements (accumulation graph, never cleared)</li>
-</ul>
-
-<h3>3.2 Neo4j (Serving / Analytics Graph)</h3>
+<h3>3.2 Neo4j (Entity Query Engine)</h3>
 <table>
   <tr><th>Concern</th><th>Details</th></tr>
-  <tr><td>Role</td><td>Read-optimized property graph for visualization and traversal</td></tr>
+  <tr><td>Role</td><td>Query engine for entity/relationship data, guided by ontology from GraphDB</td></tr>
   <tr><td>Query</td><td>Cypher</td></tr>
   <tr><td>Sync</td><td>One-way from GraphDB via <code>GraphDBNeo4jSyncService</code></td></tr>
   <tr><td>Scoping</td><td><code>tenant_id</code> + <code>workspace_id</code> properties on every node</td></tr>
 </table>
 
-<p>What lives in Neo4j:</p>
-<ul>
-  <li>Entity nodes with labels matching ontology classes</li>
-  <li>Relationships matching ontology object properties</li>
-  <li>Properties: <code>concept_id</code>, <code>tenant_id</code>, <code>workspace_id</code>, <code>name</code>, <code>label</code></li>
-  <li>Used for: entity listing, graph visualization (BFS), relationship traversal</li>
-</ul>
-
-<h3>3.3 Redis (Vector Store + Cache + Queue)</h3>
+<h3>3.3 Redis (Vector Store + Memory + Cache + Queue)</h3>
 <table>
   <tr><th>Concern</th><th>Details</th></tr>
-  <tr><td>Role</td><td>Vector embeddings for RAG, staging area, cache, job queues</td></tr>
+  <tr><td>Role</td><td>Vector embeddings for RAG, agent long-term memory, staging area, cache, job queues</td></tr>
   <tr><td>Index</td><td>RediSearch HNSW (cosine similarity, 1024-dim)</td></tr>
   <tr><td>Persistence</td><td>AOF (append-only file)</td></tr>
 </table>
+<pre><code>chunk:{chunkId}                → Vector embedding + text + metadata (permanent)
+doc:{docId}                    → Document metadata (permanent)
+staged:{docId}                 → Staging data for KG enrichment (persistent, no TTL)
+colmap:{workspaceId}:{ontId}   → Column mapping configuration (permanent)
+agent:{tenantId}:{wsId}:{id}   → Agent configuration JSON (permanent)
+agent_mem:{agentId}:{memId}    → Individual memory entries (permanent)
+agent_core:{agentId}           → Core memory block (permanent)
+agent_session:{agentId}:{sid}  → Conversation session messages (permanent)
+session:{token}                → User session data
+bull:*                         → BullMQ job queues</code></pre>
 
-<p>Key patterns:</p>
-<pre><code>chunk:{chunkId}              → Vector embedding + text + metadata (permanent)
-staged:{docId}               → Staging data for uncommitted documents (7-day TTL)
-doc:{docId}                  → Committed document metadata (permanent)
-colmap:{workspaceId}:{ontId} → Column mapping configuration (permanent)
-colmap_history:{w}:{o}       → Mapping version history (permanent)
-ontology_version:{ontId}:*   → Ontology version snapshots (permanent)
-session:{token}              → User session data
-bull:*                       → BullMQ job queues</code></pre>
+<h3>3.4 Trino (Federated SQL Engine)</h3>
+<table>
+  <tr><th>Concern</th><th>Details</th></tr>
+  <tr><td>Role</td><td>Federated SQL queries across external databases, guided by ontology mappings</td></tr>
+  <tr><td>Query</td><td>SQL (ANSI)</td></tr>
+  <tr><td>Catalogs</td><td>Configured per workspace (MySQL, PostgreSQL, etc.)</td></tr>
+  <tr><td>Scoping</td><td>Workspace-level catalog isolation</td></tr>
+</table>
+<p>Trino is accessed exclusively through the VKG pipeline. It never receives direct user queries — the VKG service translates natural language to SQL using ontology mappings from GraphDB.</p>
 
 <hr>
 
@@ -270,22 +253,16 @@ bull:*                       → BullMQ job queues</code></pre>
 │ │ Workspace 1  │ │ │ │ Workspace 1  │ │ │ │ Workspace 1  │ │
 │ │ • Schema     │ │ │ │ • Schema     │ │ │ │ • Schema     │ │
 │ │ • Data       │ │ │ │ • Data       │ │ │ │ • Data       │ │
-│ │ • Audit      │ │ │ │ • Audit      │ │ │ │ • Audit      │ │
+│ │ • Agents     │ │ │ │ • Agents     │ │ │ │ • Agents     │ │
 │ └──────────────┘ │ │ └──────────────┘ │ │ └──────────────┘ │
-│ ┌──────────────┐ │ │ ┌──────────────┐ │ └──────────────────┘
-│ │ Workspace 2  │ │ │ │ Workspace 2  │ │
-│ │ • Schema     │ │ │ │ • Schema     │ │
-│ │ • Data       │ │ │ │ • Data       │ │
-│ └──────────────┘ │ │ └──────────────┘ │
-└──────────────────┘ └──────────────────┘</code></pre>
-
+└──────────────────┘ └──────────────────┘ └──────────────────┘</code></pre>
 <p>Isolation is enforced at every layer:</p>
 <ul>
   <li><strong>GraphDB:</strong> Separate named graphs per tenant/workspace</li>
-  <li><strong>Neo4j:</strong> <code>tenant_id</code> + <code>workspace_id</code> properties on every node, filtered in all Cypher queries</li>
+  <li><strong>Neo4j:</strong> <code>tenant_id</code> + <code>workspace_id</code> on every node</li>
   <li><strong>Redis:</strong> Key prefixes include workspace/tenant IDs</li>
-  <li><strong>API:</strong> <code>X-Tenant-Id</code> and <code>X-Workspace-Id</code> headers required on all requests</li>
-  <li><strong>Middleware:</strong> <code>tenantContext</code> middleware extracts and validates context before any route handler</li>
+  <li><strong>Trino:</strong> Workspace-scoped catalog configurations</li>
+  <li><strong>API:</strong> <code>X-Tenant-Id</code> and <code>X-Workspace-Id</code> headers required</li>
 </ul>
 
 <hr>
@@ -294,243 +271,73 @@ bull:*                       → BullMQ job queues</code></pre>
 <h2 id="auth">5. Authentication &amp; Authorization</h2>
 <pre><code>┌──────────┐     ┌──────────────┐     ┌──────────────┐     ┌──────────┐
 │  Client  │────▶│  CSRF Check  │────▶│  JWT Verify  │────▶│   RBAC   │
-│ (Bearer) │     │ (X-Requested │     │  (Bearer     │     │ (Role +  │
-│          │     │  -With hdr)  │     │   token)     │     │  Perms)  │
-└──────────┘     └──────────────┘     └──────────────┘     └──────────┘
-                                                                 │
-                                                                 ▼
-                                                          ┌──────────┐
-                                                          │  Route   │
-                                                          │ Handler  │
-                                                          └──────────┘</code></pre>
-
-<h3>Role Hierarchy</h3>
+│ (Bearer) │     │              │     │              │     │          │
+└──────────┘     └──────────────┘     └──────────────┘     └──────────┘</code></pre>
 <table>
   <tr><th>Role</th><th>Inherits</th><th>Key Permissions</th></tr>
-  <tr><td><code>viewer</code></td><td>—</td><td>Read dashboards, execute queries, use chat, read documents/entities</td></tr>
-  <tr><td><code>member</code></td><td>viewer</td><td>Upload documents, run extractions, delete own content</td></tr>
-  <tr><td><code>manager</code></td><td>member</td><td>Manage ontologies, clear data, manage folders, trigger sync</td></tr>
-  <tr><td><code>admin</code></td><td>manager</td><td>Manage users/tenants, system settings, LLM config, purge</td></tr>
+  <tr><td><code>viewer</code></td><td>—</td><td>Read dashboards, use agents, read documents/entities</td></tr>
+  <tr><td><code>member</code></td><td>viewer</td><td>Upload documents, run extractions, create agents</td></tr>
+  <tr><td><code>manager</code></td><td>member</td><td>Manage ontologies, clear data, manage folders</td></tr>
+  <tr><td><code>admin</code></td><td>manager</td><td>Manage users/tenants, system settings, LLM config</td></tr>
 </table>
-
-<h3>Token Flow</h3>
-<pre><code>POST /api/auth/login { email, password }
-  → Validate credentials
-  → Generate JWT (24h expiry) + Refresh token (7d)
-  → Return { token, refreshToken, user }
-
-All subsequent requests:
-  Authorization: Bearer &lt;jwt&gt;
-  X-Requested-With: XMLHttpRequest  (CSRF protection)
-  X-Tenant-Id: &lt;tenantId&gt;
-  X-Workspace-Id: &lt;workspaceId&gt;</code></pre>
 
 <hr>
 
-<!-- Section 6: Document Processing Pipeline -->
-<h2 id="pipeline">6. Document Processing Pipeline</h2>
-<p>This is the core data ingestion flow. Documents go through a multi-stage pipeline from upload to committed knowledge graph data.</p>
+<!-- Section 6: Two Independent Services -->
+<h2 id="services">6. Two Independent Services: RAG &amp; KG Enrichment</h2>
 
-<h3>6.1 Sequence Diagram — Document Upload &amp; Staging</h3>
+<h3>Service A: RAG (Retrieval-Augmented Generation)</h3>
+<p>Runs at upload time. Every document uploaded to a folder is immediately chunked and embedded, making it available for semantic search via agents.</p>
+<pre><code>Upload → Parse → Chunk → Embed → Store vectors in Redis
+                                   Status: 'uploaded' (RAG-ready)</code></pre>
+
+<h3>Service B: KG Enrichment (Optional)</h3>
+<p>Triggered manually via the 🧠 Enrich button on any non-enriched document. Extracts entities and relationships using an ontology, generates RDF triples, stores them in GraphDB, and syncs to Neo4j.</p>
+<pre><code>Enrich → Stage → Column Map → Commit → Triples to GraphDB → Sync to Neo4j
+                                         Status: 'enriched'</code></pre>
+<p>Staging data persists indefinitely in Redis (no TTL) and is cleaned up on document delete or after enrichment.</p>
+
+<hr>
+
+<!-- Section 7: Document Processing Pipeline -->
+<h2 id="pipeline">7. Document Processing Pipeline</h2>
+
+<h3>7.1 Upload &amp; RAG Embedding (Service A)</h3>
 <pre><code>┌──────┐     ┌──────────┐     ┌──────────┐     ┌───────┐     ┌───────┐
-│Client│     │ Documents│     │ Parsers  │     │Chunker│     │ Redis │
-│      │     │  Route   │     │PDF/CSV/  │     │       │     │       │
-│      │     │          │     │Text      │     │       │     │       │
+│Client│     │ Upload   │     │ Parsers  │     │Chunker│     │ Redis │
+│      │     │  Route   │     │PDF/CSV/  │     │  +    │     │Vector │
+│      │     │          │     │Text      │     │Embedder│    │ Store │
 └──┬───┘     └────┬─────┘     └────┬─────┘     └───┬───┘     └───┬───┘
    │              │                │               │             │
    │ POST /upload │                │               │             │
-   │ (multipart)  │                │               │             │
    │─────────────▶│                │               │             │
    │              │  Parse file    │               │             │
    │              │───────────────▶│               │             │
-   │              │                │               │             │
-   │              │  Parsed data   │               │             │
-   │              │◀───────────────│               │             │
-   │              │                │               │             │
-   │              │  Chunk text    │               │             │
-   │              │────────────────────────────────▶│             │
-   │              │                │               │             │
-   │              │  Chunks[]      │               │             │
-   │              │◀────────────────────────────────│             │
-   │              │                │               │             │
-   │              │  Store staged:{docId}           │             │
+   │              │  Chunk + Embed │               │             │
+   │              │───────────────────────────────▶│             │
+   │              │  Store chunk:{id} with vectors │             │
    │              │──────────────────────────────────────────────▶│
-   │              │                │               │  (7-day TTL)│
-   │              │                │               │             │
-   │  { docId,    │                │               │             │
-   │    staged }  │                │               │             │
+   │  { docId }   │  Status: 'uploaded' (RAG-ready)│             │
    │◀─────────────│                │               │             │</code></pre>
 
-<h3>6.2 Sequence Diagram — Schema Analysis &amp; Ontology Creation</h3>
-<pre><code>┌──────┐     ┌──────────┐     ┌─────────┐     ┌─────────┐     ┌───────┐
-│Client│     │ Documents│     │ Schema  │     │   LLM   │     │GraphDB│
-│      │     │  Route   │     │ Analyzer│     │ Service │     │       │
-└──┬───┘     └────┬─────┘     └────┬────┘     └────┬────┘     └───┬───┘
-   │              │                │               │             │
-   │ POST /analyze│                │               │             │
-   │─────────────▶│                │               │             │
-   │              │  Analyze text  │               │             │
-   │              │───────────────▶│               │             │
-   │              │                │  LLM prompt:  │             │
-   │              │                │  "Identify    │             │
-   │              │                │   classes,    │             │
-   │              │                │   properties, │             │
-   │              │                │   relations"  │             │
-   │              │                │──────────────▶│             │
-   │              │                │               │             │
-   │              │                │  Suggested    │             │
-   │              │                │  schema       │             │
-   │              │                │◀──────────────│             │
-   │              │                │               │             │
-   │              │  { classes,    │               │             │
-   │              │    properties, │               │             │
-   │              │    relations } │               │             │
-   │              │◀───────────────│               │             │
-   │              │                │               │             │
-   │  Schema      │                │               │             │
-   │  results     │                │               │             │
-   │◀─────────────│                │               │             │
-   │              │                │               │             │
-   │ POST /owl    │  (User saves as ontology)      │             │
-   │─────────────▶│                │               │             │
-   │              │  Generate Turtle + import       │             │
-   │              │──────────────────────────────────────────────▶│
-   │              │                │               │  (schema    │
-   │              │                │               │   graph)    │</code></pre>
-
-<h3>6.3 Sequence Diagram — Column Mapping (CSV/Excel)</h3>
-<pre><code>┌──────┐     ┌──────────────┐     ┌──────────┐     ┌───────┐
-│Client│     │StagedDocument│     │ OWL      │     │ Redis │
-│(SDR) │     │Review (UI)   │     │ Service  │     │       │
-└──┬───┘     └──────┬───────┘     └────┬─────┘     └───┬───┘
-   │               │                   │               │
-   │ Select        │                   │               │
-   │ ontology      │                   │               │
-   │──────────────▶│                   │               │
-   │               │ GET /owl/structure│               │
-   │               │──────────────────▶│               │
-   │               │                   │               │
-   │               │ { classes,        │               │
-   │               │   properties      │               │
-   │               │   with domain }   │               │
-   │               │◀──────────────────│               │
-   │               │                   │               │
-   │               │ GET /column-mappings              │
-   │               │──────────────────────────────────▶│
-   │               │                   │               │
-   │               │ Saved mappings    │               │
-   │               │ (or empty)        │               │
-   │               │◀──────────────────────────────────│
-   │               │                   │               │
-   │ autoMapColumns│                   │               │
-   │ (match cols   │                   │               │
-   │  to ontology  │                   │               │
-   │  properties,  │                   │               │
-   │  resolve      │                   │               │
-   │  rdfs:domain) │                   │               │
-   │◀──────────────│                   │               │
-   │               │                   │               │
-   │ User edits:   │                   │               │
-   │ • Property    │                   │               │
-   │ • Links To    │                   │               │
-   │ • Belongs To  │ ◀── NEW: domain   │               │
-   │ • Skip        │     routing for   │               │
-   │               │     literal props │               │
-   │──────────────▶│                   │               │
-   │               │                   │               │
-   │               │ POST /column-mappings             │
-   │               │──────────────────────────────────▶│
-   │               │                   │  colmap:{w}:{o}</code></pre>
-
-<p>Each column mapping entry:</p>
+<h3>7.2 Column Mapping (CSV/Excel)</h3>
 <pre><code>{
   "property": "http://example.org#branchName",
   "propertyLabel": "branchName",
   "linkedClass": "",
-  "linkedClassLabel": "",
   "domain": "http://example.org#Branch",
   "domainLabel": "Branch",
   "ignore": false
 }</code></pre>
-
 <ul>
-  <li><code>linkedClass</code> set → Object property (creates relationship to another entity)</li>
+  <li><code>linkedClass</code> set → Object property (creates relationship)</li>
   <li><code>linkedClass</code> empty → Datatype property (literal value)</li>
-  <li><code>domain</code> → Which entity class this literal belongs to (resolved from <code>rdfs:domain</code>)</li>
-  <li>For multi-sheet Excel: <code>sheetClassMap</code> maps each sheet to a primary class</li>
+  <li><code>domain</code> → Which entity class this literal belongs to (from <code>rdfs:domain</code>)</li>
+  <li>Multi-sheet Excel: <code>sheetClassMap</code> maps each sheet to a primary class</li>
 </ul>
 
-<h3>6.4 Sequence Diagram — Commit (Triple Generation &amp; Storage)</h3>
-<pre><code>┌──────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────┐  ┌─────┐  ┌─────┐
-│Client│  │ Documents│  │ Triple   │  │ Embedding│  │GraphDB│  │Redis│  │Neo4j│
-│      │  │  Route   │  │ Service  │  │ Service  │  │       │  │     │  │     │
-└──┬───┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └───┬───┘  └──┬──┘  └──┬──┘
-   │           │              │             │            │         │        │
-   │ POST      │              │             │            │         │        │
-   │ /commit   │              │             │            │         │        │
-   │──────────▶│              │             │            │         │        │
-   │           │              │             │            │         │        │
-   │           │ Load staged  │             │            │         │        │
-   │           │ data         │             │            │         │        │
-   │           │─────────────────────────────────────────────────▶│        │
-   │           │              │             │            │         │        │
-   │           │ Load ontology│             │            │         │        │
-   │           │──────────────────────────────────────▶│         │        │
-   │           │              │             │            │         │        │
-   │           │ generateCSV  │             │            │         │        │
-   │           │ Triples()    │             │            │         │        │
-   │           │─────────────▶│             │            │         │        │
-   │           │              │             │            │         │        │
-   │           │              │ PASS 1: Build entity URIs          │        │
-   │           │              │ (natural key detection,            │        │
-   │           │              │  cross-sheet FK resolution)        │        │
-   │           │              │             │            │         │        │
-   │           │              │ PASS 2: Generate triples           │        │
-   │           │              │ • rdf:type for each entity         │        │
-   │           │              │ • Object props → link to entity    │        │
-   │           │              │ • Literal props → domain routing   │        │
-   │           │              │   (attach to correct entity based  │        │
-   │           │              │    on rdfs:domain, not just row)   │        │
-   │           │              │             │            │         │        │
-   │           │  triples[]   │             │            │         │        │
-   │           │◀─────────────│             │            │         │        │
-   │           │              │             │            │         │        │
-   │           │ POST triples (Turtle)      │            │         │        │
-   │           │──────────────────────────────────────▶│         │        │
-   │           │              │             │  (data     │         │        │
-   │           │              │             │   graph)   │         │        │
-   │           │              │             │            │         │        │
-   │           │ Embed chunks │             │            │         │        │
-   │           │─────────────────────────▶│            │         │        │
-   │           │              │             │            │         │        │
-   │           │              │  Store vectors           │         │        │
-   │           │              │  ──────────────────────────────▶│        │
-   │           │              │             │            │         │        │
-   │           │ Store doc metadata         │            │         │        │
-   │           │─────────────────────────────────────────────────▶│        │
-   │           │              │             │            │  doc:{id}        │
-   │           │              │             │            │         │        │
-   │           │ Save column mappings       │            │         │        │
-   │           │─────────────────────────────────────────────────▶│        │
-   │           │              │             │            │ colmap: │        │
-   │           │              │             │            │         │        │
-   │           │ Trigger sync │             │            │         │        │
-   │           │ (GraphDB → Neo4j)          │            │         │        │
-   │           │──────────────────────────────────────────────────────────▶│
-   │           │              │             │            │         │        │
-   │  { success,│             │             │            │         │        │
-   │    jobId } │             │             │            │         │        │
-   │◀──────────│              │             │            │         │        │</code></pre>
-
-<h3>6.5 Domain-Aware Property Routing</h3>
-<p>When committing CSV/Excel data, literal properties are routed to the correct entity based on <code>rdfs:domain</code>:</p>
+<h3>7.3 Domain-Aware Property Routing</h3>
 <pre><code>CSV Row: BranchID=BR001, BranchName="Downtown", CustomerID=CUST001, FullName="Brian Brown"
-
-Mapping:
-  BranchID   → linkedClass: Branch    (object property → creates Branch:BR001)
-  BranchName → literal, domain: Branch (attach to Branch:BR001, NOT Customer)
-  CustomerID → linkedClass: Customer   (object property → creates Customer:CUST001)
-  FullName   → literal, domain: ""     (attach to row entity = Customer)
 
 Generated Triples:
   Customer:CUST001  rdf:type        Customer .
@@ -539,168 +346,399 @@ Generated Triples:
   Branch:BR001      rdf:type        Branch .
   Branch:BR001      branchName      "Downtown" .     ← routed to Branch, not Customer</code></pre>
 
-<p>Resolution algorithm:</p>
-<ol>
-  <li>Check <code>mapping.domain</code> for the literal column</li>
-  <li>If domain class ≠ row entity class → scan other columns in same row</li>
-  <li>Find a column with <code>linkedClass</code> matching the domain class</li>
-  <li>Use that column's value to resolve the target entity URI via <code>idLookup</code></li>
-  <li>Attach the literal triple to the resolved entity</li>
-</ol>
-
 <hr>
 
-<!-- Section 7: GraphDB → Neo4j Sync -->
-<h2 id="sync">7. GraphDB → Neo4j Sync</h2>
+<!-- Section 8: GraphDB → Neo4j Sync -->
+<h2 id="sync">8. GraphDB → Neo4j Sync</h2>
 <pre><code>┌───────┐                    ┌──────────────────┐                    ┌─────┐
 │GraphDB│                    │GraphDBNeo4jSync  │                    │Neo4j│
-│       │                    │Service           │                    │     │
 └───┬───┘                    └────────┬─────────┘                    └──┬──┘
-    │                                 │                                 │
-    │  SPARQL: SELECT all instances   │                                 │
-    │  from data graph                │                                 │
+    │  SPARQL: all instances          │                                 │
     │◀────────────────────────────────│                                 │
-    │                                 │                                 │
     │  Bindings (batches of 10000)    │                                 │
     │────────────────────────────────▶│                                 │
-    │                                 │                                 │
     │                                 │ PASS 1: Create/merge nodes      │
-    │                                 │ (concept_id, labels, properties,│
-    │                                 │  tenant_id, workspace_id)       │
     │                                 │────────────────────────────────▶│
-    │                                 │                                 │
-    │  SPARQL: SELECT all             │                                 │
-    │  relationships from data graph  │                                 │
+    │  SPARQL: all relationships      │                                 │
     │◀────────────────────────────────│                                 │
-    │                                 │                                 │
-    │  Relationship bindings          │                                 │
-    │────────────────────────────────▶│                                 │
-    │                                 │                                 │
     │                                 │ PASS 2: Create relationships    │
-    │                                 │ (two directed queries to avoid  │
+    │                                 │ (two directed queries — avoids  │
     │                                 │  ASTCachedProperty bug)         │
     │                                 │────────────────────────────────▶│
-    │                                 │                                 │
     │                                 │ Remove orphan nodes             │
-    │                                 │ (in Neo4j but not in GraphDB)   │
     │                                 │────────────────────────────────▶│</code></pre>
-
-<p>Key constraints:</p>
-<ul>
-  <li>Neo4j sessions cannot run concurrent queries — all operations are sequential <code>await</code></li>
-  <li><code>properties()</code> function on collected nodes triggers internal ASTCachedProperty bug — avoided</li>
-  <li><code>startNode(r)</code> / <code>endNode(r)</code> property access also triggers the bug — use two directed queries instead</li>
-  <li>Sync runs on server startup and after each document commit</li>
-</ul>
 
 <hr>
 
-<!-- Section 8: Graph RAG Query Flow -->
-<h2 id="rag">8. Graph RAG Query Flow</h2>
-<pre><code>┌──────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────┐  ┌─────┐  ┌─────┐
-│Client│  │  Chat    │  │ GraphRAG │  │   LLM    │  │ Redis │  │Neo4j│  │GDB  │
-│      │  │  Route   │  │ Service  │  │ Service  │  │Vector │  │     │  │     │
-└──┬───┘  └────┬─────┘  └────┬─────┘  └────┬─────┘  └───┬───┘  └──┬──┘  └──┬──┘
-   │           │              │             │            │         │        │
-   │ POST /chat│              │             │            │         │        │
-   │ { query,  │              │             │            │         │        │
-   │   mode }  │              │             │            │         │        │
-   │──────────▶│              │             │            │         │        │
-   │           │  query()     │             │            │         │        │
-   │           │─────────────▶│             │            │         │        │
-   │           │              │             │            │         │        │
-   │           │              │─── Mode Selection ───────────────────────────
-   │           │              │                          │         │        │
-   │           │              │ [RAG mode]               │         │        │
-   │           │              │ Embed query              │         │        │
-   │           │              │─────────────────────────▶│         │        │
-   │           │              │ KNN search (top-K)       │         │        │
-   │           │              │◀─────────────────────────│         │        │
-   │           │              │                          │         │        │
-   │           │              │ [Graph mode]             │         │        │
-   │           │              │ Traverse neighbors       │         │        │
-   │           │              │──────────────────────────────────▶│        │
-   │           │              │ Subgraph context         │         │        │
-   │           │              │◀──────────────────────────────────│        │
-   │           │              │                          │         │        │
-   │           │              │ [SPARQL mode]            │         │        │
-   │           │              │ LLM generates SPARQL     │         │        │
-   │           │              │─────────────▶│           │         │        │
-   │           │              │              │ Execute   │         │        │
-   │           │              │              │──────────────────────────▶│
-   │           │              │              │◀──────────────────────────│
-   │           │              │◀─────────────│           │         │        │
-   │           │              │                          │         │        │
-   │           │              │ [Cypher mode]            │         │        │
-   │           │              │ LLM generates Cypher     │         │        │
-   │           │              │─────────────▶│           │         │        │
-   │           │              │              │ Execute   │         │        │
-   │           │              │              │─────────────────▶│        │
-   │           │              │              │◀─────────────────│        │
-   │           │              │◀─────────────│           │         │        │
-   │           │              │                          │         │        │
-   │           │              │ Merge context + LLM answer         │        │
-   │           │              │─────────────▶│           │         │        │
-   │           │              │◀─────────────│           │         │        │
-   │           │              │             │            │         │        │
-   │  { answer,│              │             │            │         │        │
-   │    sources,│             │             │            │         │        │
-   │    query } │             │             │            │         │        │
-   │◀──────────│              │             │            │         │        │</code></pre>
+<!-- Section 9: Agent Architecture -->
+<h2 id="agents">9. Agent Architecture</h2>
+<p>Agents are the primary conversational interface in Purple Fabric. Each agent is a configured AI persona with specific data sources, a system prompt (perspective), and optional long-term memory.</p>
 
-<p>Query modes:</p>
+<h3>9.1 Agent Configuration</h3>
+<pre><code>{
+  "agent_id": "uuid",
+  "name": "Finance Analyst",
+  "perspective": "You are a financial analyst specializing in banking data...",
+  "folders": [{ "id": "folder-uuid", "name": "Finance Docs" }],
+  "ontologies": [{ "id": "ont-uuid", "name": "Banking Ontology" }],
+  "vkg_databases": ["mysql_banking"],
+  "settings": {
+    "memoryEnabled": true,
+    "topK": 8,
+    "graphDepth": 2
+  }
+}</code></pre>
+<ul>
+  <li><strong>Folders:</strong> Scope vector search to documents in these folders only</li>
+  <li><strong>Ontologies:</strong> Guide Neo4j graph queries with ontology schema from GraphDB</li>
+  <li><strong>VKG Databases:</strong> Enable federated SQL queries via Trino</li>
+  <li><strong>Perspective:</strong> System prompt that shapes the agent's personality and expertise</li>
+  <li><strong>Memory:</strong> Enabled by default (<code>settings.memoryEnabled !== false</code>)</li>
+</ul>
+
+<h3>9.2 Agent Chat Flow</h3>
+<pre><code>┌──────┐     ┌──────────┐     ┌──────────┐     ┌──────────────┐
+│Client│     │ Agent    │     │ Memory   │     │ GraphRAG     │
+│      │     │ Route    │     │ Service  │     │ Service      │
+└──┬───┘     └────┬─────┘     └────┬─────┘     └──────┬───────┘
+   │              │                │                   │
+   │ POST /:id/   │                │                   │
+   │ chat         │                │                   │
+   │─────────────▶│                │                   │
+   │              │ assembleMemory │                   │
+   │              │ Context()      │                   │
+   │              │───────────────▶│                   │
+   │              │ memoryContext   │                   │
+   │              │◀───────────────│                   │
+   │              │                │                   │
+   │              │ Resolve folder-scoped doc IDs      │
+   │              │                │                   │
+   │              │ unifiedAgentQuery(question, {      │
+   │              │   agent, memoryContext,             │
+   │              │   scopedDocumentIds })              │
+   │              │───────────────────────────────────▶│
+   │              │                │    4-Phase Pipeline│
+   │              │ { answer, sources, metadata }      │
+   │              │◀───────────────────────────────────│
+   │              │                │                   │
+   │              │ Fire-and-forget: extractMemories() │
+   │              │───────────────▶│                   │
+   │  { answer }  │                │                   │
+   │◀─────────────│                │                   │</code></pre>
+
+<hr>
+
+<!-- Section 10: Unified Agent Query Pipeline -->
+<h2 id="unified">10. Unified Agent Query Pipeline</h2>
+<p>The core intelligence of agent queries. A 4-phase pipeline that dynamically routes queries across multiple data sources.</p>
+
+<h3>10.1 Pipeline Overview</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────────────┐
+│                    UNIFIED AGENT QUERY PIPELINE                     │
+│                                                                     │
+│  ┌──────────┐   ┌──────────────┐   ┌──────────┐   ┌────────────┐  │
+│  │ Phase 1  │──▶│   Phase 2    │──▶│ Phase 3  │──▶│  Phase 4   │  │
+│  │  PLAN    │   │   RETRIEVE   │   │  FUSE    │   │  GENERATE  │  │
+│  │          │   │  (parallel)  │   │          │   │            │  │
+│  │ LLM picks│   │ ┌──────────┐│   │ Dedupe   │   │ LLM builds │  │
+│  │ sources, │   │ │ Vector   ││   │ Rank     │   │ answer     │  │
+│  │ rewrites │   │ │ Graph    ││   │ Budget   │   │ from fused │  │
+│  │ query,   │   │ │ VKG      ││   │ Cross-   │   │ context    │  │
+│  │ extracts │   │ │ Memory   ││   │ link     │   │            │  │
+│  │ hints    │   │ └──────────┘│   │          │   │            │  │
+│  └──────────┘   └──────────────┘   └──────────┘   └────────────┘  │
+└─────────────────────────────────────────────────────────────────────┘</code></pre>
+
+<h3>10.2 Phase 1: Query Planning (LLM-Based Source Routing)</h3>
+<p>The planner receives the user's question, available data sources, a compact schema summary from GraphDB, and memory context. It returns a routing plan:</p>
+<pre><code>{
+  "sources": ["vector", "graph", "vkg", "memory"],
+  "rewrittenQuery": "enriched query with memory context",
+  "entityHints": ["Customer", "Branch"],
+  "reasoning": "User asks about customer-branch relationships..."
+}</code></pre>
+<p>Source routing rules:</p>
+<ul>
+  <li><code>vector</code> — enabled when agent has folders (semantic search over document chunks)</li>
+  <li><code>graph</code> — enabled when agent has folders or ontologies (Neo4j, ontology-guided)</li>
+  <li><code>vkg</code> — enabled when agent has VKG databases configured</li>
+  <li><code>memory</code> — always included when memory context exists</li>
+  <li><code>graphdb</code> — NEVER included (GraphDB is schema-only, not a query target)</li>
+</ul>
+
+<h3>10.3 Phase 2: Parallel Retrieval</h3>
+<p>All selected sources are queried simultaneously via <code>Promise.all</code>:</p>
+<pre><code>┌─────────────────────────────────────────────────────────────────┐
+│                    PARALLEL RETRIEVAL                            │
+│                                                                 │
+│  ┌─────────────┐  ┌─────────────┐  ┌──────────┐  ┌──────────┐ │
+│  │   Vector    │  │   Graph     │  │   VKG    │  │  Memory  │ │
+│  │   Search    │  │   Query     │  │  Query   │  │  Recall  │ │
+│  │             │  │             │  │          │  │          │ │
+│  │ Redis HNSW  │  │ 1. Load     │  │ Ontology │  │ Semantic │ │
+│  │ KNN search  │  │    ontology │  │ → SQL    │  │ search   │ │
+│  │ (top-K,     │  │    from     │  │ → Trino  │  │ over     │ │
+│  │  min sim    │  │    GraphDB  │  │ → Answer │  │ agent    │ │
+│  │  0.15)      │  │ 2. Generate │  │          │  │ memories │ │
+│  │             │  │    Cypher   │  │          │  │ (top 5)  │ │
+│  │ Scoped to   │  │    guided   │  │          │  │          │ │
+│  │ agent's     │  │    by       │  │          │  │          │ │
+│  │ folder docs │  │    schema   │  │          │  │          │ │
+│  └─────────────┘  └─────────────┘  └──────────┘  └──────────┘ │
+└─────────────────────────────────────────────────────────────────┘</code></pre>
+
+<h3>10.4 Phase 3: Context Fusion</h3>
+<ul>
+  <li><strong>Chunk deduplication:</strong> Chunks found by both vector and graph search get boosted relevance (+0.15)</li>
+  <li><strong>Entity collection:</strong> Entities from Neo4j graph traversal, ranked by score</li>
+  <li><strong>Memory cross-linking:</strong> If a recalled memory mentions a graph entity, that entity's score is boosted</li>
+  <li><strong>VKG integration:</strong> Structured database results flagged as a separate source</li>
+  <li><strong>Ranking &amp; budgeting:</strong> Chunks sorted by relevance, entities by score, capped to token budget</li>
+</ul>
+
+<h3>10.5 Phase 4: Response Generation</h3>
+<p>The fused context is assembled into a prompt with the agent's perspective, core memory, recalled memories, document chunks, graph entities, and VKG results. The LLM generates a final answer citing sources.</p>
+
+<hr>
+
+<!-- Section 11: Agent Long-Term Memory -->
+<h2 id="memory">11. Agent Long-Term Memory</h2>
+<p>Agents maintain persistent memory across conversation sessions using a 3-tier architecture stored in Redis with vector search capabilities.</p>
+
+<h3>11.1 Memory Architecture (3 Tiers)</h3>
+<pre><code>┌─────────────────────────────────────────────────────────────────┐
+│                    AGENT MEMORY SYSTEM                           │
+│                                                                 │
+│  ┌─── Tier 1: Core Memory ──────────────────────────────────┐  │
+│  │ Always-present summary of the most important facts.       │  │
+│  │ Updated by LLM when high-importance memories (≥0.8) are   │  │
+│  │ extracted. Kept under 500 words. Bullet-point format.     │  │
+│  │ Stored at: agent_core:{agentId}                           │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│                                                                 │
+│  ┌─── Tier 2: Semantic Recall ──────────────────────────────┐  │
+│  │ Individual memory entries with vector embeddings.         │  │
+│  │ Searched via KNN when assembling context for a query.     │  │
+│  │ Types: semantic, preference, decision, event              │  │
+│  │ Stored at: agent_mem:{agentId}:{memoryId}                 │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│                                                                 │
+│  ┌─── Tier 3: Session History ──────────────────────────────┐  │
+│  │ Full conversation transcripts per session.                │  │
+│  │ Used for session continuity and memory extraction.        │  │
+│  │ Stored at: agent_session:{agentId}:{sessionId}            │  │
+│  └───────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘</code></pre>
+
+<h3>11.2 Memory Extraction Pipeline</h3>
+<p>After every agent chat response, memories are extracted asynchronously (fire-and-forget, never blocks the response):</p>
+<pre><code>┌──────────────────────────────────────────────────────────────────────┐
+│                    MEMORY EXTRACTION PIPELINE                        │
+│                                                                      │
+│  User Message + Assistant Response                                   │
+│         │                                                            │
+│         ▼                                                            │
+│  ┌──────────────┐                                                    │
+│  │ LLM Extract  │  "Analyze this conversation turn and extract       │
+│  │              │   facts, decisions, preferences, events"           │
+│  └──────┬───────┘                                                    │
+│         │                                                            │
+│         ▼  Array of { type, content, importance }                    │
+│                                                                      │
+│  ┌──────────────┐  For each extracted memory:                        │
+│  │ Consolidate  │                                                    │
+│  │              │  1. Search for similar existing memories (KNN)      │
+│  │              │  2. LLM decides: ADD / UPDATE / NOOP               │
+│  │              │     - ADD: new distinct fact → store                │
+│  │              │     - UPDATE: refines existing → invalidate old,    │
+│  │              │       store new (immutable audit trail)             │
+│  │              │     - NOOP: redundant → skip                       │
+│  └──────┬───────┘                                                    │
+│         │                                                            │
+│         ▼  Filter: importance ≥ 0.8                                  │
+│                                                                      │
+│  ┌──────────────┐                                                    │
+│  │ Update Core  │  LLM rewrites the core memory block incorporating  │
+│  │ Memory       │  new high-importance facts. Removes outdated info. │
+│  └──────────────┘                                                    │
+└──────────────────────────────────────────────────────────────────────┘</code></pre>
+
+<h3>11.3 Memory Context Assembly</h3>
+<pre><code>assembleMemoryContext(agentId, query):
+  1. Tier 1: Load core memory block (always present)
+     → "[Core Memory — persistent knowledge:] ..."
+  2. Tier 2: Semantic search over memories using query (top 5)
+     → "[Recalled Memories — relevant past context:] ..."
+  3. Return combined context string (or null if empty)</code></pre>
+<p>This context is injected into the planner (Phase 1) and the response generator (Phase 4).</p>
+
+<h3>11.4 Memory Decay</h3>
+<ul>
+  <li><strong>Invalidation:</strong> Memories older than 90 days with importance &lt; 0.3 and access count &lt; 2 are invalidated</li>
+  <li><strong>Importance reduction:</strong> Untouched memories older than 30 days have importance reduced by 10% (floor: 0.1)</li>
+</ul>
+
+<h3>11.5 Core Memory Example</h3>
+<p>A user tells the agent: "I always want financial reports in EUR, not USD."</p>
+<ol>
+  <li><code>extractMemories()</code> → LLM extracts: <code>{ type: "preference", content: "User prefers EUR", importance: 0.9 }</code></li>
+  <li>Importance ≥ 0.8 → triggers <code>_updateCoreMemory()</code></li>
+  <li>LLM rewrites core memory block incorporating the new preference</li>
+  <li>Next query: core memory is always injected, so the agent remembers without being told again</li>
+</ol>
+
+<h3>11.6 Memory API</h3>
 <table>
-  <tr><th>Mode</th><th>Sources</th><th>Best For</th></tr>
-  <tr><td><code>rag</code></td><td>Vector search only</td><td>Free-text questions about document content</td></tr>
-  <tr><td><code>graph</code></td><td>Neo4j traversal only</td><td>Entity relationship questions</td></tr>
-  <tr><td><code>neo4j-direct</code></td><td>LLM-generated Cypher</td><td>Complex graph pattern queries</td></tr>
-  <tr><td><code>graphdb-direct</code></td><td>LLM-generated SPARQL</td><td>Semantic/ontology-aware queries</td></tr>
-  <tr><td><code>hybrid</code></td><td>Vector + Graph combined</td><td>General questions (default)</td></tr>
-  <tr><td><code>compare</code></td><td>All sources side-by-side</td><td>Debugging / comparison</td></tr>
+  <tr><th>Endpoint</th><th>Method</th><th>Description</th></tr>
+  <tr><td><code>/api/agents/:id/memories</code></td><td>GET</td><td>List memories (paginated, filterable)</td></tr>
+  <tr><td><code>/api/agents/:id/memories/stats</code></td><td>GET</td><td>Memory statistics</td></tr>
+  <tr><td><code>/api/agents/:id/memories/graph</code></td><td>GET</td><td>Memory knowledge graph</td></tr>
+  <tr><td><code>/api/agents/:id/memories/core</code></td><td>GET/PUT</td><td>Core memory block</td></tr>
+  <tr><td><code>/api/agents/:id/memories/:memId</code></td><td>PUT/DELETE</td><td>Update or invalidate a memory</td></tr>
+  <tr><td><code>/api/agents/:id/memories/clear</code></td><td>POST</td><td>Clear all memories</td></tr>
+  <tr><td><code>/api/agents/:id/memories/decay</code></td><td>POST</td><td>Run memory decay</td></tr>
+  <tr><td><code>/api/agents/:id/memories/sessions</code></td><td>GET/POST</td><td>List or create sessions</td></tr>
+  <tr><td><code>/api/agents/:id/memories/sessions/:sid</code></td><td>GET/DELETE</td><td>Get or delete session</td></tr>
 </table>
 
 <hr>
 
-<!-- Section 9: Ontology Versioning -->
-<h2 id="versioning">9. Ontology Versioning</h2>
+<!-- Section 12: Virtual Knowledge Graph (VKG) -->
+<h2 id="vkg">12. Virtual Knowledge Graph (VKG)</h2>
+<p>The VKG layer enables natural-language querying of external databases without requiring users to know SQL or the underlying schema. Ontology mappings in GraphDB define the semantic bridge between domain concepts and physical database tables.</p>
+
+<h3>12.1 VKG Pipeline</h3>
+<pre><code>"How many customers are in each branch?"
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    VKG QUERY PIPELINE                            │
+│                                                                 │
+│  Step 1: Load ontology schema + VKG mappings from GraphDB       │
+│          Filter schema to VKG-mapped classes only                │
+│          Resolve 2-part table names to 3-part Trino names       │
+│                                                                 │
+│  Step 2: LLM generates execution plan + SQL                     │
+│          (guided by ontology + table mappings)                   │
+│                                                                 │
+│  Step 3: Validate SQL offline (syntax, table references)        │
+│                                                                 │
+│  Step 4: Execute SQL on Trino                                   │
+│          (retry up to 3 times with error feedback to LLM)       │
+│                                                                 │
+│  Step 5: Build context graph + reasoning trace                  │
+│          (nodes = entities, edges = relationships from results) │
+│                                                                 │
+│  Step 6: LLM generates natural language answer from results     │
+└─────────────────────────────────────────────────────────────────┘</code></pre>
+
+<h3>12.2 VKG Sequence Diagram</h3>
+<pre><code>┌──────┐  ┌──────────┐  ┌───────┐  ┌──────────┐  ┌─────┐  ┌─────┐
+│Agent │  │ VKG      │  │GraphDB│  │   LLM    │  │Trino│  │Graph│
+│Query │  │ Service  │  │       │  │ Service  │  │     │  │Build│
+└──┬───┘  └────┬─────┘  └───┬───┘  └────┬─────┘  └──┬──┘  └──┬──┘
+   │           │             │           │           │        │
+   │ question  │             │           │           │        │
+   │──────────▶│             │           │           │        │
+   │           │ SPARQL:     │           │           │        │
+   │           │ ontology +  │           │           │        │
+   │           │ VKG mappings│           │           │        │
+   │           │────────────▶│           │           │        │
+   │           │ schema +    │           │           │        │
+   │           │ mappings    │           │           │        │
+   │           │◀────────────│           │           │        │
+   │           │             │           │           │        │
+   │           │ Generate plan + SQL     │           │        │
+   │           │────────────────────────▶│           │        │
+   │           │ { plan, sql }           │           │        │
+   │           │◀────────────────────────│           │        │
+   │           │             │           │           │        │
+   │           │ Execute SQL │           │           │        │
+   │           │─────────────────────────────────▶│        │
+   │           │ rows + columns          │        │        │
+   │           │◀─────────────────────────────────│        │
+   │           │             │           │           │        │
+   │           │ Build context graph     │           │        │
+   │           │──────────────────────────────────────────▶│
+   │           │ { nodes, edges }        │           │     │
+   │           │◀──────────────────────────────────────────│
+   │           │             │           │           │        │
+   │           │ Generate answer         │           │        │
+   │           │────────────────────────▶│           │        │
+   │           │ natural language answer │           │        │
+   │           │◀────────────────────────│           │        │
+   │ { answer, │             │           │           │        │
+   │   sql,    │             │           │           │        │
+   │   graph } │             │           │           │        │
+   │◀──────────│             │           │           │        │</code></pre>
+
+<h3>12.3 Error Recovery (3-Attempt Retry)</h3>
+<pre><code>Attempt 1: LLM generates SQL → Validate → Execute
+  ❌ Trino error: "Table not found"
+Attempt 2: LLM receives error feedback → Corrected SQL → Validate → Execute
+  ❌ Validation error: "Invalid column reference"
+Attempt 3: LLM receives error feedback → Corrected SQL → Validate → Execute
+  ✅ Success: 42 rows returned</code></pre>
+
+<h3>12.4 Benefits of VKG</h3>
+<table>
+  <tr><th>Benefit</th><th>Description</th></tr>
+  <tr><td>No SQL knowledge required</td><td>Users ask in natural language; ontology mappings handle translation</td></tr>
+  <tr><td>Schema abstraction</td><td>Domain experts work with ontology concepts, not table names</td></tr>
+  <tr><td>Federation</td><td>Single query can span multiple databases via Trino catalogs</td></tr>
+  <tr><td>Ontology-guided accuracy</td><td>LLM generates SQL guided by formal ontology + table mappings</td></tr>
+  <tr><td>Context graphs</td><td>Results visualized as entity-relationship graphs</td></tr>
+  <tr><td>Reasoning traces</td><td>Step-by-step explanation of how the answer was derived</td></tr>
+  <tr><td>Workspace isolation</td><td>Each workspace has its own Trino catalog configuration</td></tr>
+</table>
+
+<h3>12.5 Ontology-to-Table Mapping</h3>
+<pre><code>Ontology Class: Customer
+  → Trino Table: mysql_banking.public.customers
+  → Property Mappings:
+      fullName    → full_name (VARCHAR)
+      dateOfBirth → dob (DATE)
+      hasBranch   → branch_id (FK → branches.id)
+
+Ontology Class: Branch
+  → Trino Table: mysql_banking.public.branches
+  → Property Mappings:
+      branchName  → name (VARCHAR)
+      branchCode  → code (VARCHAR)</code></pre>
+
+<hr>
+
+<!-- Section 13: Ontology Versioning -->
+<h2 id="versioning">13. Ontology Versioning</h2>
 <pre><code>┌──────────────────────────────────────────────────────────────────┐
 │                    Ontology Lifecycle                             │
-│                                                                  │
 │  Create ──▶ Edit ──▶ Version ──▶ Branch ──▶ Tag ──▶ Restore    │
 │                                                                  │
 │  Storage: Redis (single source of truth)                         │
 │  GraphDB: ONE version per ontology (latest) in schema graph      │
 │  Version snapshots: Redis at ontology_version:{ontId}:{verId}    │
-└──────────────────────────────────────────────────────────────────┘</code></pre>
+└──────────────────────────────────────────────────────────────────┘
 
-<pre><code>                    main branch
-                    ┌─────────────────────────────────────────┐
-                    │                                         │
-                    v1 ──── v2 ──── v3 ──── v4 (HEAD)        │
-                    │       │                                 │
-                    │       └──── experimental branch          │
-                    │             v2.1 ──── v2.2              │
-                    │                                         │
-                    tag: "initial" (v1)                        │
-                    tag: "production-2026-02" (v3)             │
-                    └─────────────────────────────────────────┘</code></pre>
-
+                    main branch
+                    v1 ──── v2 ──── v3 ──── v4 (HEAD)
+                            │
+                            └──── experimental branch
+                                  v2.1 ──── v2.2</code></pre>
 <ul>
   <li>First version auto-tagged as <code>initial</code> on <code>main</code> branch</li>
   <li>Branches work like Git checkout — one active at a time per ontology</li>
-  <li>Each committed document records <code>ontology_version_id</code> it was committed against</li>
-  <li>Mapping staleness detection: compares mapping's <code>ontologyVersionId</code> against current version</li>
-  <li>Impact analysis: shows which classes/properties were added/removed between versions</li>
+  <li>Each committed document records <code>ontology_version_id</code></li>
+  <li>Mapping staleness detection: compares mapping's version against current</li>
+  <li>Impact analysis: shows classes/properties added/removed between versions</li>
 </ul>
 
 <hr>
 
-<!-- Section 10: Entity Visualization -->
-<h2 id="viz">10. Entity Visualization</h2>
+<!-- Section 14: Entity Visualization -->
+<h2 id="viz">14. Entity Visualization</h2>
 <pre><code>┌──────┐     ┌──────────┐     ┌──────────┐     ┌─────┐
 │Client│     │ Entity   │     │ Entity   │     │Neo4j│
 │Graph │     │  Route   │     │ Service  │     │     │
-│View  │     │          │     │          │     │     │
 └──┬───┘     └────┬─────┘     └────┬─────┘     └──┬──┘
    │              │                │               │
    │ GET /graph   │                │               │
@@ -708,83 +746,54 @@ Generated Triples:
    │─────────────▶│                │               │
    │              │ getEntityGraph │               │
    │              │───────────────▶│               │
-   │              │                │               │
    │              │                │ BFS traversal  │
-   │              │                │ (depth levels) │
    │              │                │───────────────▶│
-   │              │                │               │
-   │              │                │ Two directed   │
-   │              │                │ queries per    │
-   │              │                │ level (avoid   │
-   │              │                │ ASTCached bug) │
    │              │                │◀──────────────│
-   │              │                │               │
-   │              │ { nodes[],     │               │
-   │              │   edges[] }    │               │
+   │              │ { nodes[], edges[] }           │
    │              │◀───────────────│               │
-   │              │                │               │
    │  Render SVG  │                │               │
    │  • Concentric ring layout    │               │
-   │  • Labels inside nodes       │               │
    │  • Directed arrows           │               │
    │  • Curved parallel edges     │               │
    │◀─────────────│                │               │</code></pre>
-
-<p>Node IDs use composite format: <code>class::rawId</code> (e.g., <code>Customer::CUST000010</code>) to prevent collisions between different entity types sharing the same concept_id.</p>
+<p>Node IDs use composite format: <code>class::rawId</code> (e.g., <code>Customer::CUST000010</code>) to prevent collisions.</p>
 
 <hr>
 
-<!-- Section 11: Deployment Architecture -->
-<h2 id="deploy">11. Deployment Architecture</h2>
+<!-- Section 15: Deployment Architecture -->
+<h2 id="deploy">15. Deployment Architecture</h2>
 <pre><code>┌─────────────────────────────────────────────────────────────────────┐
 │                        Docker Compose Stack                         │
 │                                                                     │
 │  ┌──────────┐                                                       │
 │  │  nginx   │ ◀── Port 80/443 (public)                             │
-│  │ (reverse │     SSL termination, static assets                    │
-│  │  proxy)  │                                                       │
 │  └────┬─────┘                                                       │
-│       │                                                             │
 │       ▼                                                             │
 │  ┌──────────┐     ┌──────────┐                                      │
 │  │   app    │     │ workers  │                                      │
-│  │ (Node.js │     │ (BullMQ  │                                      │
-│  │  :5002)  │     │  procs)  │                                      │
+│  │ (Node.js │     │ (BullMQ) │                                      │
+│  │  :5002)  │     │          │                                      │
 │  └────┬─────┘     └────┬─────┘                                      │
-│       │                │                                            │
 │       ├────────────────┤                                            │
-│       │                │                                            │
 │       ▼                ▼                                            │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐                          │
-│  │ graphdb  │  │  neo4j   │  │  redis   │                          │
-│  │ (10.7.3) │  │  (v5)    │  │ (7.4.0)  │                          │
-│  │ :7200    │  │  :7687   │  │ :6379    │                          │
-│  └──────────┘  └──────────┘  └──────────┘                          │
-│       │              │             │                                │
-│       ▼              ▼             ▼                                │
-│  [graphdb_data] [neo4j_data] [redis_data]  ← Docker volumes        │
-│                                                                     │
-│  ┌──────────┐                                                       │
-│  │ db-init  │ ← One-shot: creates GraphDB repo, Neo4j indexes,     │
-│  │          │   Redis search index                                  │
-│  └──────────┘                                                       │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐           │
+│  │ graphdb  │  │  neo4j   │  │  redis   │  │  trino   │           │
+│  │ :7200    │  │  :7687   │  │  :6379   │  │  :8080   │           │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘           │
 └─────────────────────────────────────────────────────────────────────┘</code></pre>
-
-<h3>Container Specifications</h3>
 <table>
-  <tr><th>Service</th><th>Image</th><th>Resources</th><th>Health Check</th></tr>
-  <tr><td>graphdb</td><td>ontotext/graphdb:10.7.3</td><td>2GB heap</td><td>REST API <code>/rest/repositories</code></td></tr>
-  <tr><td>neo4j</td><td>neo4j:5</td><td>Default</td><td><code>cypher-shell RETURN 1</code></td></tr>
-  <tr><td>redis</td><td>redis/redis-stack-server:7.4.0-v2</td><td>AOF persistence</td><td><code>redis-cli ping</code></td></tr>
-  <tr><td>app</td><td>iaikunal/enterprise-kg:latest</td><td>Node 18 Alpine</td><td>—</td></tr>
-  <tr><td>workers</td><td>iaikunal/enterprise-kg:latest</td><td>Node 18 Alpine</td><td>—</td></tr>
-  <tr><td>nginx</td><td>nginx:alpine</td><td>—</td><td>—</td></tr>
+  <tr><th>Service</th><th>Image</th><th>Health Check</th></tr>
+  <tr><td>graphdb</td><td>ontotext/graphdb:10.7.3</td><td>REST API <code>/rest/repositories</code></td></tr>
+  <tr><td>neo4j</td><td>neo4j:5</td><td><code>cypher-shell RETURN 1</code></td></tr>
+  <tr><td>redis</td><td>redis/redis-stack-server:7.4.0-v2</td><td><code>redis-cli ping</code></td></tr>
+  <tr><td>trino</td><td>trinodb/trino</td><td>HTTP <code>/v1/info</code></td></tr>
+  <tr><td>app</td><td>iaikunal/enterprise-kg:latest</td><td>—</td></tr>
 </table>
 
 <hr>
 
-<!-- Section 12: Client Architecture -->
-<h2 id="client">12. Client Architecture</h2>
+<!-- Section 16: Client Architecture -->
+<h2 id="client">16. Client Architecture</h2>
 <pre><code>┌─────────────────────────────────────────────────────────────────┐
 │                     React SPA (CRA)                             │
 │                                                                 │
@@ -793,36 +802,28 @@ Generated Triples:
 │  │ TenantContext (workspace selection, tenant headers)        │  │
 │  └───────────────────────────────────────────────────────────┘  │
 │                                                                 │
-│  ┌─── Hooks ─────────────────────────────────────────────────┐  │
-│  │ useApi (fetch wrapper with auth headers)                   │  │
-│  │ usePermissions (role-based UI gating)                      │  │
-│  │ useOntologies (ontology list + selection)                  │  │
-│  └───────────────────────────────────────────────────────────┘  │
-│                                                                 │
 │  ┌─── Pages / Sections ──────────────────────────────────────┐  │
 │  │                                                           │  │
-│  │  💬 Knowledge Assistant (Chat)                            │  │
-│  │     Graph RAG conversational interface                    │  │
-│  │     Multiple query modes (RAG, Graph, SPARQL, Cypher)     │  │
+│  │  🤖 Agents                                                │  │
+│  │     ├── Agent creation (name, perspective, data sources)  │  │
+│  │     ├── Agent chat with unified query pipeline            │  │
+│  │     ├── Source badges (vector, graph, vkg, memory)        │  │
+│  │     ├── Memory panel (stats, graph, core memory editor)   │  │
+│  │     └── Context graph visualization (VKG results)         │  │
 │  │                                                           │  │
 │  │  📁 Data Management                                       │  │
-│  │     ├── FileManager (documents, chunks, entities, mapping)│  │
+│  │     ├── FileManager (folders, documents, chunks, mapping) │  │
+│  │     ├── 🧠 Enrich button (inline on non-enriched docs)   │  │
 │  │     └── EntitiesPage (entity registry + graph view)       │  │
 │  │                                                           │  │
 │  │  📚 Ontologies                                            │  │
 │  │     ├── OntologiesPage (list, create, import)             │  │
 │  │     ├── EnhancedOntologyEditor (visual editor)            │  │
-│  │     ├── EnhancedOntologyViewer (read-only view)           │  │
 │  │     └── OntologyVersioningModal (version history)         │  │
-│  │                                                           │  │
-│  │  ⚙️ Jobs                                                  │  │
-│  │     └── OntologyJobs (extraction, commit, analysis jobs)  │  │
 │  │                                                           │  │
 │  │  🔧 Administration                                        │  │
 │  │     ├── DatabaseManager (Neo4j, GraphDB, Redis status)    │  │
 │  │     ├── Users / Tenants / Roles management                │  │
-│  │     ├── Audit Log (activity history)                      │  │
-│  │     ├── LLM Monitor (token usage)                         │  │
 │  │     └── Settings (system configuration)                   │  │
 │  │                                                           │  │
 │  └───────────────────────────────────────────────────────────┘  │
@@ -830,62 +831,52 @@ Generated Triples:
 
 <hr>
 
-<!-- Section 13: Service Dependency Graph -->
-<h2 id="deps">13. Service Dependency Graph</h2>
+<!-- Section 17: Service Dependency Graph -->
+<h2 id="deps">17. Service Dependency Graph</h2>
 <pre><code>                        ┌─────────────────┐
                         │   llmService    │
                         │ (Bedrock/OpenAI/│
                         │  Ollama)        │
                         └────────┬────────┘
                                  │
-          ┌──────────────────────┼──────────────────────┐
-          │                      │                      │
-          ▼                      ▼                      ▼
-┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│ extractionSvc   │  │ graphRAGService │  │schemaAnalysisSvc│
-│                 │  │                 │  │                 │
-│ • chunkingSvc   │  │ • vectorStore   │  │ • llmService    │
-│ • embeddingSvc  │  │ • neo4jService  │  │ • dataProfileSvc│
-│ • conceptExtSvc │  │ • graphDBStore  │  └─────────────────┘
-│ • entityResSvc  │  │ • llmService    │
-│ • tripleService │  └─────────────────┘
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│ graphDBTripleSvc│  │owlOntologySvc   │  │ entityService   │
-│                 │  │                 │  │                 │
-│ • graphDBStore  │  │ • graphDBStore  │  │ • neo4jService  │
-│ • entityUriSvc  │  │ • versioningSvc │  │                 │
-└─────────────────┘  └─────────────────┘  └─────────────────┘
-         │                   │                      │
-         ▼                   ▼                      ▼
-┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│    GraphDB      │  │     Redis       │  │     Neo4j       │
-│  (RDF Store)    │  │ (Vectors/Cache) │  │ (Property Graph)│
-└─────────────────┘  └─────────────────┘  └─────────────────┘</code></pre>
+     ┌───────────────────────────┼───────────────────────────┐
+     │                           │                           │
+     ▼                           ▼                           ▼
+┌──────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
+│extractionSvc │  │  graphRAGService    │  │  vkgQueryService    │
+│              │  │                     │  │                     │
+│• chunkingSvc │  │• vectorStoreService │  │• vkgOntologyService │
+│• embeddingSvc│  │• neo4jService       │  │• sqlValidatorService│
+│• conceptExt  │  │• memoryService      │  │• trinoManager       │
+│• tripleSvc   │  │• vkgQueryService    │  │• contextGraphBuilder│
+└──────┬───────┘  └──────────┬──────────┘  └──────────┬──────────┘
+       │                     │                        │
+       ▼                     ▼                        ▼
+┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────┐
+│   GraphDB    │  │    Redis     │  │    Neo4j     │  │  Trino   │
+│(Ontology)    │  │(Vectors/Mem) │  │(Entity Query)│  │(Fed. SQL)│
+└──────────────┘  └──────────────┘  └──────────────┘  └──────────┘</code></pre>
 
 <hr>
 
-<!-- Section 14: Security Architecture -->
-<h2 id="security">14. Security Architecture</h2>
+<!-- Section 18: Security Architecture -->
+<h2 id="security">18. Security Architecture</h2>
 <table>
   <tr><th>Layer</th><th>Mechanism</th></tr>
   <tr><td>Transport</td><td>HTTPS via nginx SSL termination (Let's Encrypt)</td></tr>
   <tr><td>Authentication</td><td>JWT Bearer tokens (24h expiry) + refresh tokens (7d)</td></tr>
-  <tr><td>CSRF</td><td><code>X-Requested-With: XMLHttpRequest</code> header required on all state-changing requests</td></tr>
+  <tr><td>CSRF</td><td><code>X-Requested-With: XMLHttpRequest</code> header required</td></tr>
   <tr><td>Authorization</td><td>RBAC with 4-tier role hierarchy and 26 granular permissions</td></tr>
-  <tr><td>Rate Limiting</td><td>200 requests/minute per user/IP on all <code>/api</code> routes</td></tr>
-  <tr><td>Input Validation</td><td>LLM output validator, prompt sanitizer, Turtle syntax validation</td></tr>
-  <tr><td>Audit</td><td>Activity logger captures all API requests with user, method, path, status</td></tr>
-  <tr><td>Tenant Isolation</td><td>Named graphs (GraphDB), node properties (Neo4j), key prefixes (Redis)</td></tr>
-  <tr><td>Data Scoping</td><td>Every query includes tenant/workspace filters — no cross-tenant data leakage</td></tr>
+  <tr><td>Rate Limiting</td><td>200 requests/minute per user/IP</td></tr>
+  <tr><td>Input Validation</td><td>LLM output validator, prompt sanitizer, SQL validation</td></tr>
+  <tr><td>Audit</td><td>Activity logger captures all API requests</td></tr>
+  <tr><td>Tenant Isolation</td><td>Named graphs (GraphDB), node properties (Neo4j), key prefixes (Redis), catalog scoping (Trino)</td></tr>
 </table>
 
 <hr>
 
-<!-- Section 15: Background Job Processing -->
-<h2 id="jobs">15. Background Job Processing</h2>
+<!-- Section 19: Background Job Processing -->
+<h2 id="jobs">19. Background Job Processing</h2>
 <pre><code>┌──────────────────────────────────────────────────────────────────┐
 │                      BullMQ (Redis-backed)                       │
 │                                                                  │
@@ -895,38 +886,38 @@ Generated Triples:
 │  │                │  │                │  │  queue         │     │
 │  │ • Parse doc    │  │ • Gen triples  │  │ • LLM analyze  │     │
 │  │ • LLM extract  │  │ • Store GraphDB│  │ • Suggest      │     │
-│  │ • Embed chunks │  │ • Embed chunks │  │   classes      │     │
-│  │ • Store vectors│  │ • Sync Neo4j   │  │ • Suggest      │     │
-│  └────────────────┘  └────────────────┘  │   properties   │     │
-│                                          └────────────────┘     │
+│  │ • Embed chunks │  │ • Sync Neo4j   │  │   classes      │     │
+│  │ • Store vectors│  │                │  │                │     │
+│  └────────────────┘  └────────────────┘  └────────────────┘     │
 │                                                                  │
 │  Job lifecycle: pending → active → completed/failed              │
-│  Progress updates via ontologyJobService                         │
-│  UI polls OntologyJobs component for status                      │
 └──────────────────────────────────────────────────────────────────┘</code></pre>
 
 <hr>
 
-<!-- Section 16: Key Design Decisions -->
-<h2 id="decisions">16. Key Design Decisions</h2>
+<!-- Section 20: Key Design Decisions -->
+<h2 id="decisions">20. Key Design Decisions</h2>
 <table>
   <tr><th>Decision</th><th>Rationale</th></tr>
-  <tr><td>GraphDB as source of truth</td><td>OWL/RDF provides formal semantics, reasoning, and SPARQL for complex queries</td></tr>
-  <tr><td>Neo4j as serving layer</td><td>Optimized for graph traversal, visualization, and Cypher pattern matching</td></tr>
-  <tr><td>Redis for vectors</td><td>RediSearch HNSW index provides sub-millisecond semantic search</td></tr>
-  <tr><td>One-way sync (GraphDB → Neo4j)</td><td>Avoids dual-write consistency issues; GraphDB is authoritative</td></tr>
-  <tr><td>Redis for ontology versions</td><td>Fast read/write for version snapshots; GraphDB stores only latest</td></tr>
-  <tr><td>Staging in Redis with TTL</td><td>Uncommitted data auto-expires; no orphan cleanup needed</td></tr>
-  <tr><td>Deterministic entity URIs</td><td>Natural key-based URIs enable cross-document entity deduplication</td></tr>
+  <tr><td>GraphDB as ontology/schema store only</td><td>Provides formal semantics and SPARQL for schema management; not queried for answers</td></tr>
+  <tr><td>Neo4j as entity query engine</td><td>Optimized for graph traversal; guided by ontology from GraphDB</td></tr>
+  <tr><td>Redis for vectors + memory</td><td>RediSearch HNSW for sub-millisecond semantic search on chunks and memories</td></tr>
+  <tr><td>Trino for federated SQL</td><td>Enables querying external databases; ontology mappings abstract the schema</td></tr>
+  <tr><td>Two independent services (RAG + KG)</td><td>RAG is immediate at upload; KG enrichment is optional and manual</td></tr>
+  <tr><td>LLM-based query planner</td><td>Dynamically routes queries to the right sources based on question semantics</td></tr>
+  <tr><td>3-tier agent memory</td><td>Core memory (always present) + semantic recall (query-relevant) + session history</td></tr>
+  <tr><td>Async memory extraction</td><td>Never blocks chat responses; fire-and-forget with <code>setImmediate</code></td></tr>
+  <tr><td>Memory consolidation via LLM</td><td>Prevents duplicates; LLM decides ADD/UPDATE/NOOP for each fact</td></tr>
+  <tr><td>Staging data persists indefinitely</td><td>No TTL — cleaned up on doc delete or after enrichment</td></tr>
   <tr><td>Domain-aware property routing</td><td>Literal properties attach to the correct entity based on <code>rdfs:domain</code></td></tr>
-  <tr><td>Composite node IDs (<code>class::rawId</code>)</td><td>Prevents collisions between different entity types sharing same concept_id</td></tr>
-  <tr><td>Sequential Neo4j operations</td><td>Avoids ASTCachedProperty internal bug with concurrent session queries</td></tr>
+  <tr><td>VKG retry with error feedback</td><td>Up to 3 attempts with LLM receiving error context for self-correction</td></tr>
+  <tr><td>MIN_SIMILARITY 0.15</td><td>Lowered from 0.3 to avoid filtering out results for vague queries</td></tr>
 </table>
 
 <hr>
 
 <p style="color: var(--text-secondary); font-size: 13px; margin-top: 40px;">
-  <em>Document generated from codebase analysis. For API reference, see <code>/api-docs</code> (Swagger UI).</em>
+  <em>Document generated from codebase analysis — Version 3.0, February 2026. For API reference, see <code>/api-docs</code> (Swagger UI).</em>
 </p>
 
 </body>

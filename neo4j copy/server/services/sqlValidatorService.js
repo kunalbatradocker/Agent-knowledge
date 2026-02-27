@@ -117,27 +117,82 @@ class SQLValidatorService {
   }
 
   /**
-   * Validate table references against ontology mappings (no Trino needed).
-   * Returns warnings (not errors) since mappings may not cover all tables.
+   * Validate table and column references against ontology mappings (no Trino needed).
+   * Returns warnings for table issues and column mismatches.
    */
-  _validateAgainstMappings(sql, mappings) {
-    const warnings = [];
-    const tableRefs = this._extractTableReferences(sql);
+    _validateAgainstMappings(sql, mappings) {
+      const warnings = [];
+      const tableRefs = this._extractTableReferences(sql);
 
-    // Build set of known tables from mappings
-    const knownTables = new Set();
-    for (const meta of Object.values(mappings.classes || {})) {
-      if (meta.sourceTable) knownTables.add(meta.sourceTable.toLowerCase());
-    }
-
-    for (const ref of tableRefs) {
-      if (knownTables.size > 0 && !knownTables.has(ref.toLowerCase())) {
-        warnings.push(`Table "${ref}" not found in ontology mappings — may not exist in Trino`);
+      // Build set of known tables from mappings
+      const knownTables = new Set();
+      for (const meta of Object.values(mappings.classes || {})) {
+        if (meta.sourceTable) knownTables.add(meta.sourceTable.toLowerCase());
       }
-    }
 
-    return warnings;
-  }
+      for (const ref of tableRefs) {
+        if (knownTables.size > 0 && !knownTables.has(ref.toLowerCase())) {
+          warnings.push(`Table "${ref}" not found in ontology mappings — may not exist in Trino`);
+        }
+      }
+
+      // Build column lookup: table → Set of valid column names
+      // Also build a flat set of all known columns across all tables
+      const columnsByTable = new Map();
+      const allKnownColumns = new Set();
+      for (const [className, classMeta] of Object.entries(mappings.classes || {})) {
+        const table = (classMeta.sourceTable || '').toLowerCase();
+        if (!table) continue;
+        if (!columnsByTable.has(table)) columnsByTable.set(table, new Set());
+        // Add primary key column
+        if (classMeta.sourceIdColumn) {
+          columnsByTable.get(table).add(classMeta.sourceIdColumn.toLowerCase());
+          allKnownColumns.add(classMeta.sourceIdColumn.toLowerCase());
+        }
+      }
+      for (const [propName, propMeta] of Object.entries(mappings.properties || {})) {
+        const col = (propMeta.sourceColumn || propName).toLowerCase();
+        allKnownColumns.add(col);
+        // If property has a sourceTable, add to that table's column set
+        if (propMeta.sourceTable) {
+          const table = propMeta.sourceTable.toLowerCase();
+          if (!columnsByTable.has(table)) columnsByTable.set(table, new Set());
+          columnsByTable.get(table).add(col);
+        } else {
+          // Add to all tables (property domain not tracked here)
+          for (const cols of columnsByTable.values()) {
+            cols.add(col);
+          }
+        }
+      }
+
+      // Extract alias → table mapping from SQL
+      const aliasToTable = this._extractAliasMap(sql);
+
+      // Extract column references from SQL (alias.column patterns)
+      const colRefs = this._extractColumnReferences(sql);
+      for (const { alias, column } of colRefs) {
+        const colLower = column.toLowerCase();
+        // Skip SQL keywords/functions that look like columns
+        if (['count', 'sum', 'avg', 'min', 'max', 'coalesce', 'lower', 'upper', 'trim', 'cast', 'distinct', 'as', 'null', 'true', 'false', 'case', 'when', 'then', 'else', 'end', 'and', 'or', 'not', 'in', 'like', 'between', 'is', 'exists', 'asc', 'desc'].includes(colLower)) continue;
+
+        // If we have an alias, resolve to table and check that table's columns
+        if (alias) {
+          const table = aliasToTable[alias.toLowerCase()];
+          if (table && columnsByTable.has(table)) {
+            const validCols = columnsByTable.get(table);
+            if (!validCols.has(colLower)) {
+              warnings.push(`Column "${alias}.${column}" not found in mapped columns for table. Valid columns: ${[...validCols].join(', ')}`);
+            }
+          }
+        } else if (allKnownColumns.size > 0 && !allKnownColumns.has(colLower)) {
+          // No alias — check against all known columns
+          warnings.push(`Column "${column}" not found in any mapped table columns. Check the COLUMN DICTIONARY.`);
+        }
+      }
+
+      return warnings;
+    }
 
 
 
@@ -154,6 +209,45 @@ class SQLValidatorService {
     }
     return Array.from(refs);
   }
+  /**
+     * Extract alias → fully-qualified table name mapping from SQL
+     * Handles: FROM catalog.schema.table AS alias, FROM catalog.schema.table alias
+     */
+    _extractAliasMap(sql) {
+      const map = {};
+      // Match: FROM/JOIN catalog.schema.table [AS] alias
+      const pattern = /(?:FROM|JOIN)\s+(\w+\.\w+\.\w+)(?:\s+(?:AS\s+)?(\w+))?/gi;
+      let match;
+      while ((match = pattern.exec(sql)) !== null) {
+        const table = match[1].toLowerCase();
+        const alias = match[2];
+        if (alias && !['ON', 'WHERE', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'CROSS', 'FULL', 'JOIN', 'GROUP', 'ORDER', 'HAVING', 'LIMIT', 'UNION'].includes(alias.toUpperCase())) {
+          map[alias.toLowerCase()] = table;
+        }
+      }
+      return map;
+    }
+
+    /**
+     * Extract column references from SQL (alias.column and bare column patterns)
+     * Returns array of { alias: string|null, column: string }
+     */
+    _extractColumnReferences(sql) {
+      const refs = [];
+      // Match alias.column patterns (e.g., m.city, t.amount)
+      const aliasColPattern = /\b(\w+)\.(\w+)(?!\.\w)/g;
+      let match;
+      while ((match = aliasColPattern.exec(sql)) !== null) {
+        const prefix = match[1];
+        const col = match[2];
+        // Skip if prefix looks like a catalog/schema (3-part names handled by table extraction)
+        // Check if there's another dot before this match (part of catalog.schema.table)
+        const before = sql.substring(Math.max(0, match.index - 50), match.index);
+        if (/\w+\.\s*$/.test(before)) continue; // part of a longer dotted name
+        refs.push({ alias: prefix, column: col });
+      }
+      return refs;
+    }
 
   /**
    * Check for balanced parentheses

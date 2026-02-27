@@ -201,15 +201,15 @@ class OntologyJobService {
     const steps = Array.isArray(data.processing_steps) ? data.processing_steps : [];
     const jobType = data.job_type || 'extraction';
     const hasLegacySteps = steps.some(s => s.step === 'text_extraction') && jobType !== 'extraction';
-    const isTerminal = ['completed', 'committed', 'failed', 'cancelled', 'approved', 'rejected'].includes(data.status);
-    // Committed upload jobs should show commit steps (with embedding), not upload steps
-    const isCommittedUpload = data.status === 'committed' && jobType === 'upload' && !steps.some(s => s.step === 'embedding');
+    const isTerminal = ['completed', 'committed', 'enriched', 'failed', 'cancelled', 'approved', 'rejected'].includes(data.status);
+    // Enriched upload jobs should show commit steps (with embedding), not upload steps
+    const isEnrichedUpload = (data.status === 'committed' || data.status === 'enriched') && jobType === 'upload' && !steps.some(s => s.step === 'embedding');
 
-    if (hasLegacySteps || isCommittedUpload || (isTerminal && steps.some(s => s.status === 'active'))) {
+    if (hasLegacySteps || isEnrichedUpload || (isTerminal && steps.some(s => s.status === 'active'))) {
       const now = data.updated_at || new Date().toISOString();
       const finalStatus = isTerminal ? 'completed' : 'pending';
-      // Committed upload jobs should use commit steps
-      const effectiveType = isCommittedUpload ? 'commit' : jobType;
+      // Enriched upload jobs should use commit steps
+      const effectiveType = isEnrichedUpload ? 'commit' : jobType;
       const correctSteps = {
         upload: [
           { step: 'queued', label: 'Queued', status: 'completed', timestamp: now },

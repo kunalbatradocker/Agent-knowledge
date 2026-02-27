@@ -147,8 +147,10 @@ class VectorStoreService {
             tenant_id: chunkData.tenant_id || '',
             workspace_id: chunkData.workspace_id || '',
             doc_type: chunkData.doc_type || '',
+            access_label: chunkData.access_label || '',
             language: chunkData.language || 'en',
             embedding_model: vecData.embedding_model || 'unknown',
+            created_at: Date.now(),
             metadata: chunkData.metadata ? JSON.parse(chunkData.metadata) : {},
             embedding: embeddingArr
           });
@@ -206,9 +208,34 @@ class VectorStoreService {
     } while (cursor !== '0');
 
     const total = migratedCount + fixedCount;
-    if (fixedCount > 0) {
-      // Embeddings were malformed — drop and recreate the index so it re-indexes correctly
-      console.log(`   🔄 Re-creating index after fixing ${fixedCount} embeddings...`);
+
+    // Pass 3: Patch chunks missing created_at (causes RediSearch indexing failures)
+    let patchedCount = 0;
+    cursor = '0';
+    do {
+      const result = await client.sendCommand(['SCAN', cursor, 'MATCH', `${this.chunkPrefix}*`, 'COUNT', '200']);
+      cursor = result[0];
+      const keys = result[1];
+
+      for (const key of keys) {
+        try {
+          const keyType = await client.type(key);
+          if (keyType !== 'ReJSON-RL' && keyType !== 'json') continue;
+
+          const ca = await client.json.get(key, { path: '$.created_at' });
+          if (!ca || !ca[0]) {
+            await client.json.set(key, '$.created_at', Date.now());
+            patchedCount++;
+          }
+        } catch (e) {
+          // Skip keys that can't be patched
+        }
+      }
+    } while (cursor !== '0');
+
+    const needsReindex = fixedCount > 0 || patchedCount > 0;
+    if (needsReindex) {
+      console.log(`   🔄 Re-creating index after fixing ${fixedCount} embeddings, ${patchedCount} missing created_at...`);
       try {
         await client.ft.dropIndex(this.indexName);
         this.indexReady = false;
@@ -217,10 +244,10 @@ class VectorStoreService {
         console.warn(`   ⚠️ Could not recreate index: ${e.message}`);
       }
     }
-    if (total > 0) {
-      console.log(`✅ Migration complete: ${migratedCount} chunks migrated, ${fixedCount} embeddings fixed`);
+    if (total > 0 || patchedCount > 0) {
+      console.log(`✅ Migration complete: ${migratedCount} migrated, ${fixedCount} embeddings fixed, ${patchedCount} created_at patched`);
     }
-    return total;
+    return total + patchedCount;
   }
 
   // ── Store operations ──────────────────────────────────────────────
@@ -266,6 +293,7 @@ class VectorStoreService {
         access_label: chunk.access_label || '',
         language: chunk.language || 'en',
         embedding_model: embeddingModel,
+        created_at: Date.now(),
         metadata: chunk.metadata || {},
         embedding: Array.from(embedding)
       });
@@ -475,15 +503,14 @@ class VectorStoreService {
         return [];
       }
 
-      const MIN_SIMILARITY = 0.3;
+      const MIN_SIMILARITY = 0.15;
 
-      return results.documents
+      const mapped = results.documents
         .map(doc => {
           const d = doc.value;
           // RediSearch COSINE distance = 1 - similarity
           const rawScore = parseFloat(d.score ?? d.__score ?? '1');
           const similarity = 1 - rawScore;
-          if (similarity < MIN_SIMILARITY) return null;
 
           return {
             chunkId: d.id || doc.id.replace(this.chunkPrefix, ''),
@@ -498,7 +525,18 @@ class VectorStoreService {
             metadata: typeof d.metadata === 'string' ? JSON.parse(d.metadata) : (d.metadata || {})
           };
         })
-        .filter(r => r !== null);
+        .filter(r => r.similarity >= MIN_SIMILARITY);
+
+      if (mapped.length === 0 && results.documents.length > 0) {
+        // Log top scores when everything is filtered out
+        const topScores = results.documents.slice(0, 3).map(doc => {
+          const raw = parseFloat(doc.value.score ?? '1');
+          return (1 - raw).toFixed(4);
+        });
+        console.log(`   ⚠️ All ${results.documents.length} results below similarity threshold ${MIN_SIMILARITY} (top scores: ${topScores.join(', ')})`);
+      }
+
+      return mapped;
     } catch (error) {
       console.error('Error in semantic search:', error);
       // Fallback: if index not ready yet, return empty rather than crash

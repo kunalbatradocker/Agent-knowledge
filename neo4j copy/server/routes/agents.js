@@ -67,8 +67,9 @@ router.post('/', optionalTenantContext, async (req, res) => {
       perspective: (perspective || '').trim(),
       knowledge_graphs: knowledgeGraphs || [],
       folders: req.body.folders || [],
+      ontologies: req.body.ontologies || [],
       vkg_databases: req.body.vkgDatabases || [],
-      search_mode: searchMode || 'hybrid',
+      search_mode: searchMode || 'hybrid', // kept for backward compat, planner ignores it
       settings: settings || { topK: 8, graphDepth: 2 },
       tenant_id: tenantId,
       workspace_id: workspaceId,
@@ -104,6 +105,7 @@ router.put('/:id', optionalTenantContext, async (req, res) => {
     if (perspective !== undefined) agent.perspective = perspective.trim();
     if (knowledgeGraphs !== undefined) agent.knowledge_graphs = knowledgeGraphs;
     if (req.body.folders !== undefined) agent.folders = req.body.folders;
+    if (req.body.ontologies !== undefined) agent.ontologies = req.body.ontologies;
     if (req.body.vkgDatabases !== undefined) agent.vkg_databases = req.body.vkgDatabases;
     if (searchMode !== undefined) agent.search_mode = searchMode;
     if (settings !== undefined) agent.settings = { ...agent.settings, ...settings };
@@ -127,8 +129,12 @@ router.delete('/:id', optionalTenantContext, async (req, res) => {
     const existing = await redisService.get(key);
     if (!existing) return res.status(404).json({ success: false, error: 'Agent not found' });
     await redisService.del(key);
-    // Also delete conversation history
+    // Also delete conversation history and memories (all users)
     await redisService.del(`agent_conversations:${req.params.id}`);
+    try {
+      const memoryService = require('../services/memoryService');
+      await memoryService.clearAllAgentData(req.params.id);
+    } catch (e) { logger.warn(`⚠️ Memory cleanup on agent delete failed: ${e.message}`); }
     res.json({ success: true, message: 'Agent deleted' });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -140,22 +146,34 @@ router.delete('/:id', optionalTenantContext, async (req, res) => {
  * Uses the agent's perspective as system prompt and routes through graphRAGService
  * so all search modes (hybrid, rag, graph, graphdb, vkg) work.
  * When folders are attached, queries are scoped to documents in those folders.
+ * When memory is enabled, injects long-term memory context and extracts new memories async.
  */
 router.post('/:id/chat', optionalTenantContext, async (req, res) => {
   try {
     const tenantId = req.headers['x-tenant-id'] || 'default';
     const workspaceId = req.headers['x-workspace-id'] || 'default';
+    const userId = req.user?.email || req.headers['x-user-id'] || 'default';
     const agentKey = `agent:${tenantId}:${workspaceId}:${req.params.id}`;
     const agentJson = await redisService.get(agentKey);
     if (!agentJson) return res.status(404).json({ success: false, error: 'Agent not found' });
 
     const agent = JSON.parse(agentJson);
-    const { message, history } = req.body;
+    const { message, history, sessionId } = req.body;
     if (!message?.trim()) return res.status(400).json({ success: false, error: 'Message is required' });
 
-    const searchMode = agent.search_mode || 'hybrid';
-    const topK = agent.settings?.topK || 8;
-    const graphDepth = agent.settings?.graphDepth || 2;
+    const searchMode = agent.search_mode || 'hybrid'; // backward compat
+    const memoryEnabled = agent.settings?.memoryEnabled !== false; // enabled by default
+
+    // ── Assemble memory context (if enabled) ──
+    let memoryContext = null;
+    if (memoryEnabled) {
+      try {
+        const memoryService = require('../services/memoryService');
+        memoryContext = await memoryService.assembleMemoryContext(agent.agent_id, userId, message);
+      } catch (e) {
+        logger.warn(`⚠️ Memory context assembly failed (non-blocking): ${e.message}`);
+      }
+    }
 
     // ── Resolve folder-scoped document IDs ──
     // If agent has folders attached, find all document IDs in those folders
@@ -195,74 +213,41 @@ router.post('/:id/chat', optionalTenantContext, async (req, res) => {
       }
     }
 
-    // VKG mode uses a different service
-    if (searchMode === 'vkg') {
-      const vkgQueryService = require('../services/vkgQueryService');
-      const result = await vkgQueryService.query(message, tenantId, workspaceId, {
-        systemPrompt: agent.perspective,
-        databases: agent.vkg_databases || []
-      });
-      return res.json({
-        success: true,
-        message: {
-          role: 'assistant',
-          content: result.answer || 'No response',
-          sources: result.citations ? { sql: result.citations.sql, databases: result.citations.databases } : null,
-          agent_id: agent.agent_id,
-          agent_name: agent.name,
-          searchMode: 'vkg'
-        }
-      });
-    }
-
-    // All other modes go through graphRAGService
+    // ── Unified Agent Query Pipeline ──
+    // Routes through the planner which decides which sources to consult
+    // (vector, graph, vkg, memory) based on the query + context.
+    // GraphDB provides ontology schema to guide Neo4j and VKG queries.
     const graphRAGService = require('../services/graphRAGService');
 
-    // Prepend agent perspective to the question so the LLM uses it as context
-    const perspectivePrefix = agent.perspective
-      ? `[Agent Perspective: ${agent.perspective}]\n\n`
-      : '';
-
-    const queryOptions = {
-      searchMode,
-      topK,
-      graphDepth,
+    const result = await graphRAGService.unifiedAgentQuery(message, {
+      agent,
+      memoryContext,
+      scopedDocumentIds,
       tenant_id: tenantId,
       workspace_id: workspaceId,
+      userId,
       history: (history || []).map(m => ({ role: m.role, content: m.content }))
-    };
+    });
 
-    // Pass document IDs filter for folder-scoped queries
-    if (scopedDocumentIds) {
-      queryOptions.documentIds = scopedDocumentIds;
-    }
+    const assistantContent = result.answer || 'No response';
 
-    const result = await graphRAGService.query(perspectivePrefix + message, queryOptions);
-
-    // Extract sources from the result
-    const sources = [];
-    if (result.sources?.chunks) {
-      for (const c of result.sources.chunks) {
-        sources.push({
-          documentId: c.documentId,
-          documentName: c.documentName,
-          chunkIndex: c.chunkIndex,
-          similarity: c.similarity,
-          text: (c.text || '').substring(0, 200)
-        });
-      }
+    // Fire-and-forget: memory extraction + session persistence
+    if (memoryEnabled) {
+      _asyncMemoryWork(agent.agent_id, userId, message, assistantContent, sessionId);
     }
 
     res.json({
       success: true,
       message: {
         role: 'assistant',
-        content: result.answer || 'No response',
-        sources,
+        content: assistantContent,
+        sources: result.sources || {},
         metadata: result.metadata,
+        context_graph: result.context_graph,
+        reasoning_trace: result.reasoning_trace,
         agent_id: agent.agent_id,
         agent_name: agent.name,
-        searchMode
+        searchMode: result.metadata?.searchMode || searchMode
       }
     });
   } catch (error) {
@@ -270,5 +255,34 @@ router.post('/:id/chat', optionalTenantContext, async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+/**
+ * Async background work after a chat response:
+ * 1. Extract memories from the conversation turn
+ * 2. Persist messages to the session
+ * This never blocks the response.
+ */
+function _asyncMemoryWork(agentId, userId, userMessage, assistantResponse, sessionId) {
+  setImmediate(async () => {
+    try {
+      const memoryService = require('../services/memoryService');
+
+      // Persist to session if sessionId provided — lazily create if it doesn't exist yet
+      if (sessionId) {
+        const existing = await memoryService.getSession(agentId, userId, sessionId);
+        if (!existing) {
+          await memoryService.createSession(agentId, userId, sessionId);
+        }
+        await memoryService.appendToSession(agentId, userId, sessionId, { role: 'user', content: userMessage, timestamp: Date.now() });
+        await memoryService.appendToSession(agentId, userId, sessionId, { role: 'assistant', content: assistantResponse, timestamp: Date.now() });
+      }
+
+      // Extract and consolidate memories
+      await memoryService.extractMemories(agentId, userId, userMessage, assistantResponse, sessionId);
+    } catch (e) {
+      logger.warn(`⚠️ Async memory work failed (non-critical): ${e.message}`);
+    }
+  });
+}
 
 module.exports = router;

@@ -32,6 +32,7 @@ const authRouter = require('./routes/auth');
 const trinoCatalogsRouter = require('./routes/trinoCatalogs');
 const vkgQueryRouter = require('./routes/vkgQuery');
 const agentsRouter = require('./routes/agents');
+const agentMemoryRouter = require('./routes/agentMemory');
 const { requireAuth, requireAdmin, requireManager, requireMember, requireWorkspaceAccess, csrfProtection } = require('./middleware/auth');
 const { injectUserLLMToken } = require('./middleware/llmToken');
 const { activityLogger } = require('./middleware/activityLogger');
@@ -165,6 +166,7 @@ app.use('/api/jdbc', requireMember, jdbcConnectorRouter);
 app.use('/api/trino', requireMember, trinoCatalogsRouter);
 app.use('/api/vkg', requireMember, vkgQueryRouter);
 app.use('/api/agents', requireMember, agentsRouter);
+app.use('/api/agents/:agentId/memories', requireMember, agentMemoryRouter);
 
 // Serve React build in production (Docker)
 const clientBuildPath = path.join(__dirname, '../client/build');

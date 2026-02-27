@@ -15,6 +15,7 @@ const csvParser = require('../../services/csvParser');
 const llmService = require('../../services/llmService');
 const neo4jService = require('../../services/neo4jService');
 const chunkingService = require('../../services/chunkingService');
+const embeddingService = require('../../services/embeddingService');
 const vectorStoreService = require('../../services/vectorStoreService');
 const conceptExtractionService = require('../../services/conceptExtractionService');
 const graphSchemaService = require('../../services/graphSchemaService');
@@ -145,38 +146,69 @@ router.post('/upload', uploadLimiter, upload.single('file'), optionalTenantConte
       text = fs.readFileSync(filePath, 'utf-8');
     }
 
-    // Chunk the document
+    // ── Chunk + Embed ──
+    // Embeddings are generated at upload time so agents can query immediately.
     const chunks = await chunkingService.chunkText(text, {
       method: chunkingMethod,
       chunkSize: parseInt(chunkSize),
       chunkOverlap: parseInt(chunkOverlap)
     });
 
-    // Store chunks in Redis vector store for semantic search
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
-      const chunkId = `${docId}_chunk_${i}`;
-      
-      await vectorStoreService.storeChunk({
-        id: chunkId,
-        text: chunk.text,
-        documentId: docId,
-        documentName: fileName,
-        chunkIndex: i,
-        startChar: chunk.startChar || 0,
-        endChar: chunk.endChar || 0,
-        start_page: chunk.start_page || chunk.metadata?.startPage || 0,
-        end_page: chunk.end_page || chunk.metadata?.endPage || 0,
-        section_title: chunk.section_title || '',
-        heading_path: chunk.heading_path || '',
-        tenant_id: tenantId,
-        workspace_id: workspaceId,
-        access_label: req.body.access_label || ''
-      });
+    const EMBED_PARALLEL = parseInt(process.env.EMBEDDING_PARALLELISM) || 10;
+    let storedChunks = 0;
+    const failedChunkIndices = [];
+    for (let i = 0; i < chunks.length; i += EMBED_PARALLEL) {
+      const batch = chunks.slice(i, i + EMBED_PARALLEL);
+      const embedResults = await Promise.allSettled(batch.map(c => embeddingService.generateEmbedding(c.text)));
+      await Promise.all(batch.map((chunk, j) => {
+        if (embedResults[j].status === 'rejected') {
+          failedChunkIndices.push(i + j);
+          return Promise.resolve();
+        }
+        const chunkId = `${docId}_chunk_${i + j}`;
+        return vectorStoreService.storeChunk({
+          id: chunkId,
+          text: chunk.text,
+          documentId: docId,
+          documentName: fileName,
+          chunkIndex: i + j,
+          startChar: chunk.startChar || 0,
+          endChar: chunk.endChar || 0,
+          start_page: chunk.start_page || chunk.metadata?.startPage || 0,
+          end_page: chunk.end_page || chunk.metadata?.endPage || 0,
+          section_title: chunk.section_title || '',
+          heading_path: chunk.heading_path || '',
+          tenant_id: tenantId,
+          workspace_id: workspaceId,
+          doc_type: ext.replace('.', ''),
+          access_label: req.body.access_label || ''
+        }, embedResults[j].value).then(() => { storedChunks++; }).catch(() => { failedChunkIndices.push(i + j); });
+      }));
     }
 
     // Stage document for review (stored in Redis, not Neo4j)
     const redisService = require('../../services/redisService');
+
+    // Create doc metadata — document is immediately queryable by agents
+    const docMetadata = {
+      uri: docUri,
+      doc_id: docId,
+      title: fileName,
+      doc_type: ext.replace('.', ''),
+      workspace_id: workspaceId,
+      tenant_id: tenantId,
+      folder_id: null,
+      ontology_id: null,
+      entity_count: 0,
+      triple_count: 0,
+      chunks_stored: storedChunks,
+      embedding_failures: failedChunkIndices.length,
+      status: 'uploaded',
+      created_at: new Date().toISOString()
+    };
+    await redisService.set(`doc:${docId}`, JSON.stringify(docMetadata), 0);
+    await redisService.sAdd(`workspace:${workspaceId}:docs`, docId);
+
     const staged = {
       type: csvData ? 'csv' : 'document',
       document: {
@@ -205,7 +237,7 @@ router.post('/upload', uploadLimiter, upload.single('file'), optionalTenantConte
       stagedAt: new Date().toISOString()
     };
     
-    await redisService.setEx(`staged:${docId}`, 3600, JSON.stringify(staged)); // 1 hour TTL
+    await redisService.set(`staged:${docId}`, JSON.stringify(staged), 0); // No TTL — cleaned up on doc delete
 
     // Cleanup uploaded file
     fs.unlinkSync(filePath);
@@ -285,27 +317,38 @@ router.post('/fm-upload', uploadLimiter, upload.single('file'), optionalTenantCo
       chunkOverlap: parseInt(chunkOverlap)
     });
 
-    // Store chunks in Redis vector store for semantic search
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
-      const chunkId = `${docId}_chunk_${i}`;
-      
-      await vectorStoreService.storeChunk({
-        id: chunkId,
-        text: chunk.text,
-        documentId: docId,
-        documentName: fileName,
-        chunkIndex: i,
-        startChar: chunk.startChar || 0,
-        endChar: chunk.endChar || 0,
-        start_page: chunk.start_page || chunk.metadata?.startPage || 0,
-        end_page: chunk.end_page || chunk.metadata?.endPage || 0,
-        section_title: chunk.section_title || '',
-        heading_path: chunk.heading_path || '',
-        tenant_id: tenantId,
-        workspace_id: workspaceId,
-        access_label: req.body.access_label || ''
-      });
+    // ── Chunk + Embed ──
+    // Embeddings are generated at upload time so agents can query immediately.
+    const EMBED_PARALLEL = parseInt(process.env.EMBEDDING_PARALLELISM) || 10;
+    let storedChunks = 0;
+    const failedChunkIndices = [];
+    for (let i = 0; i < chunks.length; i += EMBED_PARALLEL) {
+      const batch = chunks.slice(i, i + EMBED_PARALLEL);
+      const embedResults = await Promise.allSettled(batch.map(c => embeddingService.generateEmbedding(c.text)));
+      await Promise.all(batch.map((chunk, j) => {
+        if (embedResults[j].status === 'rejected') {
+          failedChunkIndices.push(i + j);
+          return Promise.resolve();
+        }
+        const chunkId = `${docId}_chunk_${i + j}`;
+        return vectorStoreService.storeChunk({
+          id: chunkId,
+          text: chunk.text,
+          documentId: docId,
+          documentName: fileName,
+          chunkIndex: i + j,
+          startChar: chunk.startChar || 0,
+          endChar: chunk.endChar || 0,
+          start_page: chunk.start_page || chunk.metadata?.startPage || 0,
+          end_page: chunk.end_page || chunk.metadata?.endPage || 0,
+          section_title: chunk.section_title || '',
+          heading_path: chunk.heading_path || '',
+          tenant_id: tenantId,
+          workspace_id: workspaceId,
+          doc_type: ext.replace('.', ''),
+          access_label: req.body.access_label || ''
+        }, embedResults[j].value).then(() => { storedChunks++; }).catch(() => { failedChunkIndices.push(i + j); });
+      }));
     }
 
     // Get folder's ontology if uploading to a folder
@@ -327,6 +370,28 @@ router.post('/fm-upload', uploadLimiter, upload.single('file'), optionalTenantCo
 
     // Stage document for review
     const redisService = require('../../services/redisService');
+
+    // Create doc metadata immediately so agents can discover this document
+    // even before the staged review is completed
+    const docMetadata = {
+      uri: docUri,
+      doc_id: docId,
+      title: fileName,
+      doc_type: ext.replace('.', ''),
+      workspace_id: workspaceId,
+      tenant_id: tenantId,
+      folder_id: folderId || null,
+      ontology_id: folderOntologyId,
+      entity_count: 0,
+      triple_count: 0,
+      chunks_stored: storedChunks,
+      embedding_failures: failedChunkIndices.length,
+      status: 'uploaded',
+      created_at: new Date().toISOString()
+    };
+    await redisService.set(`doc:${docId}`, JSON.stringify(docMetadata), 0);
+    await redisService.sAdd(`workspace:${workspaceId}:docs`, docId);
+
     const staged = {
       type: csvData ? 'csv' : 'document',
       document: {
@@ -342,8 +407,13 @@ router.post('/fm-upload', uploadLimiter, upload.single('file'), optionalTenantCo
       csvData: csvData,
       chunks: chunks.map((c, i) => ({
         uri: `${docUri}#chunk=${i}`,
+        chunk_id: `${docId}_chunk_${i}`,
         text: c.text,
-        order: i
+        order: i,
+        startChar: c.startChar || 0,
+        endChar: c.endChar || 0,
+        startPage: c.start_page || c.metadata?.startPage || 0,
+        endPage: c.end_page || c.metadata?.endPage || 0
       })),
       headers: csvData?.headers,
       sampleRows: csvData?.rows?.slice(0, 5),
@@ -352,7 +422,7 @@ router.post('/fm-upload', uploadLimiter, upload.single('file'), optionalTenantCo
       stagedAt: new Date().toISOString()
     };
     
-    await redisService.setEx(`staged:${docId}`, 3600, JSON.stringify(staged));
+    await redisService.set(`staged:${docId}`, JSON.stringify(staged), 0); // No TTL — cleaned up on doc delete
 
     // Cleanup uploaded file
     fs.unlinkSync(filePath);

@@ -109,7 +109,7 @@ router.post('/ontology/save', requireManager, async (req, res) => {
     const workspaceName = await resolveWorkspaceName(workspaceId);
     logger.info(`[VKG] Saving reviewed ontology "${name}" for tenant ${tenantId}, workspace ${workspaceName} (${workspaceId})`);
     console.log(`[VKG] Save ontology context: tenant=${tenantId}, workspace=${workspaceId} (${workspaceName}), header-ws=${req.headers['x-workspace-id']}, body-ws=${req.body?.workspaceId}`);
-    const result = await vkgOntologyService.saveOntology(tenantId, workspaceId, turtle, { name, baseUri, workspaceName });
+    const result = await vkgOntologyService.saveOntology(tenantId, workspaceId, turtle, { name, baseUri, workspaceName, createdBy: req.user?.email || 'unknown' });
     res.json(result);
   } catch (err) {
     logger.error(`[VKG] Ontology save error: ${err.message}`);
@@ -159,6 +159,42 @@ router.post('/ontology/refresh', requireManager, async (req, res) => {
 
     await vkgOntologyService.invalidateCache(tenantId, workspaceId);
     const result = await vkgOntologyService.generateFromCatalogs(tenantId, workspaceId, { ...options, workspaceName });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/vkg/ontology/versions
+ * Get version history for the workspace's VKG ontology
+ */
+router.get('/ontology/versions', async (req, res) => {
+  try {
+    const { tenantId, workspaceId } = getContext(req);
+    const versions = await vkgOntologyService.getVersionHistory(tenantId, workspaceId);
+    res.json({ versions });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/vkg/ontology/rollback
+ * Rollback to a previous ontology version
+ */
+router.post('/ontology/rollback', requireManager, async (req, res) => {
+  try {
+    const { tenantId, workspaceId } = getContext(req);
+    const { version } = req.body;
+    if (!version || typeof version !== 'number') {
+      return res.status(400).json({ error: 'version (number) is required' });
+    }
+    const workspaceName = await resolveWorkspaceName(workspaceId);
+    const result = await vkgOntologyService.rollbackToVersion(tenantId, workspaceId, version, {
+      workspaceName,
+      createdBy: req.user?.email || 'unknown'
+    });
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });

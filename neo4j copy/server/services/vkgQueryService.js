@@ -42,7 +42,9 @@ class VKGQueryService {
 
       try {
         // Step 1: Load ontology + mappings from GraphDB (NO Trino introspection needed)
+        // Also run a lightweight drift check in parallel (non-blocking)
         console.log(`${tag} ⏳ Step 1: Loading ontology schema + mappings from GraphDB...`);
+        let driftWarnings = [];
         const [ontologySchema, mappings] = await this._timedStep(
           pipeline, 'Load Ontology + Mappings', async () => {
             return Promise.all([
@@ -51,6 +53,20 @@ class VKGQueryService {
             ]);
           }
         );
+
+        // Non-blocking drift check — runs in background, result appended to response
+        const driftPromise = vkgOntologyService.detectSchemaDrift(tenantId, workspaceId, workspaceName)
+          .then(drift => {
+            if (drift.hasDrift) {
+              if (drift.removedTables.length > 0) driftWarnings.push(`⚠️ Schema drift: ${drift.removedTables.length} mapped table(s) no longer exist in database: ${drift.removedTables.join(', ')}`);
+              if (drift.removedColumns.length > 0) driftWarnings.push(`⚠️ Schema drift: ${drift.removedColumns.length} mapped column(s) no longer exist: ${drift.removedColumns.slice(0, 5).join(', ')}${drift.removedColumns.length > 5 ? '...' : ''}`);
+              if (drift.newTables.length > 0) driftWarnings.push(`ℹ️ ${drift.newTables.length} new table(s) found but not in ontology. Consider regenerating.`);
+              console.log(`${tag} ⚠️ Schema drift detected: ${JSON.stringify({ newTables: drift.newTables.length, removedTables: drift.removedTables.length, newColumns: drift.newColumns.length, removedColumns: drift.removedColumns.length })}`);
+            }
+          })
+          .catch(err => {
+            console.log(`${tag} ⚠️ Drift check failed (non-fatal): ${err.message}`);
+          });
         const classCount = ontologySchema.classes?.length || 0;
         const propCount = (ontologySchema.dataProperties?.length || 0) + (ontologySchema.objectProperties?.length || 0);
         const mappingClassCount = Object.keys(mappings.classes || {}).length;
@@ -59,6 +75,11 @@ class VKGQueryService {
 
         // Resolve 2-part table names (database.table) to 3-part Trino names (catalog.schema.table)
         const resolvedMappings = await this._resolveTrinoTableNames(tenantId, mappings);
+
+        // Augment relationship JOIN conditions with FK data from Trino introspection.
+        // The LLM-generated joinSQL in the ontology may be wrong or missing — Trino
+        // introspection provides accurate FK relationships detected from column naming.
+        await this._augmentJoinsFromTrino(tenantId, resolvedMappings, workspaceId);
 
         // Filter schema to only VKG-mapped classes/properties (avoids flooding LLM with unrelated ontology)
         const filteredSchema = this._filterSchemaByMappings(ontologySchema, resolvedMappings);
@@ -101,18 +122,23 @@ class VKGQueryService {
             return sqlValidatorService.validate(sql, null, resolvedMappings);
           });
 
-          if (!validation.valid) {
-            const errMsg = validation.errors.join('; ');
+          // Treat column-mismatch warnings as errors (they will cause Trino failures)
+          const columnWarnings = (validation.warnings || []).filter(w => w.includes('not found in mapped columns') || w.includes('not found in any mapped table'));
+          const allErrors = [...validation.errors, ...columnWarnings];
+
+          if (!validation.valid || columnWarnings.length > 0) {
+            const errMsg = allErrors.join('; ');
             console.log(`${tag} ❌ SQL validation FAILED: ${errMsg}`);
             lastError = `SQL validation failed: ${errMsg}`;
             conversationHistory.push(
               { role: 'assistant', content: JSON.stringify({ plan, sql }) },
-              { role: 'user', content: `The SQL you generated failed validation: ${errMsg}\n\nPlease fix the SQL and return the corrected JSON. Remember: all table references must use 3-part names (catalog.schema.table) from the TABLE MAPPINGS.` }
+              { role: 'user', content: `The SQL you generated has WRONG COLUMN NAMES: ${errMsg}\n\nYou MUST use ONLY the exact column names from the SQL COLUMNS section and COLUMN DICTIONARY. Do NOT invent column names from ontology property names. Fix the SQL and return corrected JSON.` }
             );
             if (attempt < MAX_ATTEMPTS) continue;
             return this._errorResponse(question, lastError, pipeline);
           }
-          console.log(`${tag} ✅ SQL valid${validation.warnings?.length ? ` (${validation.warnings.length} warnings)` : ''}`);
+          const nonColumnWarnings = (validation.warnings || []).filter(w => !columnWarnings.includes(w));
+          console.log(`${tag} ✅ SQL valid${nonColumnWarnings.length ? ` (${nonColumnWarnings.length} warnings)` : ''}`);
 
           // Step 4: Execute SQL on Trino
           console.log(`${tag} ⏳ Step 4: Executing on Trino...`);
@@ -169,9 +195,14 @@ class VKGQueryService {
         // Step 6: LLM generates answer
         console.log(`${tag} ⏳ Step 6: LLM generating natural language answer...`);
         const answer = await this._timedStep(pipeline, 'LLM Answer Generation', async () => {
-          return this._generateAnswer(question, trinoResult, graph);
+          return this._generateAnswer(question, trinoResult, graph, {
+            sql, plan, mappings: resolvedMappings, workspaceId
+          });
         });
         console.log(`${tag} ✅ Answer generated (${answer.length} chars)`);
+
+        // Wait for drift check to complete before building response
+        await driftPromise;
 
         const totalMs = Date.now() - pipeline.totalStartTime;
 
@@ -208,7 +239,7 @@ class VKGQueryService {
           },
           query_mode: 'vkg_federated',
           plan,
-          warnings: validation.warnings
+          warnings: [...(validation.warnings || []), ...driftWarnings]
         };
 
       } catch (err) {
@@ -314,6 +345,137 @@ class VKGQueryService {
             dataProperties: schema.dataProperties.filter(p => matchesPropOrDomain(p, mappedPropNames))
           };
         }
+
+    /**
+     * Augment relationship JOIN conditions with FK data from Trino introspection.
+     * The LLM-generated joinSQL in the ontology may be incorrect or missing.
+     * Trino introspection detects FK relationships from column naming conventions
+     * (e.g., customer_id in transactions → customers.customer_id).
+     *
+     * This method:
+     * 1. Introspects all catalogs referenced in the mappings
+     * 2. Builds a table→FK lookup from Trino's detected relationships
+     * 3. For each ontology relationship, either validates/replaces the joinSQL
+     *    or generates one from Trino FK data if missing
+     * 4. Adds any Trino-detected FKs that have no corresponding ontology relationship
+     */
+    async _augmentJoinsFromTrino(tenantId, mappings, workspaceId = null) {
+      try {
+        // Collect unique catalogs from mapped tables
+        const catalogSet = new Set();
+        for (const meta of Object.values(mappings.classes || {})) {
+          if (meta.sourceTable) {
+            const parts = meta.sourceTable.split('.');
+            if (parts.length >= 2) catalogSet.add(parts[0]);
+          }
+        }
+        if (catalogSet.size === 0) return;
+
+        // Introspect each catalog to get FK relationships
+        const allFKs = []; // { fromTable, fromColumn, toTable, toColumn }
+        const introspections = await Promise.all(
+          Array.from(catalogSet).map(async (catalogName) => {
+            try {
+              return await trinoCatalogService.introspectCatalog(tenantId, catalogName, null, workspaceId);
+            } catch { return null; }
+          })
+        );
+
+        for (const intro of introspections) {
+          if (intro?.relationships) {
+            allFKs.push(...intro.relationships);
+          }
+        }
+
+        if (allFKs.length === 0) {
+          console.log(`  🔗 No FK relationships detected from Trino introspection`);
+          return;
+        }
+
+        console.log(`  🔗 Trino FK introspection: ${allFKs.length} foreign key relationships detected`);
+
+        // Build class name → sourceTable lookup
+        const classToTable = {};
+        const tableToClass = {};
+        for (const [className, meta] of Object.entries(mappings.classes || {})) {
+          if (meta.sourceTable) {
+            classToTable[className] = meta.sourceTable;
+            tableToClass[meta.sourceTable.toLowerCase()] = className;
+          }
+        }
+
+        // Build FK lookup: fromTable → [{ fromColumn, toTable, toColumn }]
+        const fkByTable = {};
+        for (const fk of allFKs) {
+          const key = fk.fromTable.toLowerCase();
+          if (!fkByTable[key]) fkByTable[key] = [];
+          fkByTable[key].push(fk);
+        }
+
+        // For each existing ontology relationship, validate/replace joinSQL
+        let augmented = 0;
+        for (const [relName, meta] of Object.entries(mappings.relationships || {})) {
+          // Find domain and range classes from ontology
+          const domain = meta.domain;
+          const range = meta.range;
+          if (!domain || !range) continue;
+
+          const domainTable = classToTable[domain];
+          const rangeTable = classToTable[range];
+          if (!domainTable || !rangeTable) continue;
+
+          // Look for a Trino FK that connects these two tables
+          const domainFKs = fkByTable[domainTable.toLowerCase()] || [];
+          const matchingFK = domainFKs.find(fk => fk.toTable.toLowerCase() === rangeTable.toLowerCase());
+
+          // Also check reverse direction (range → domain)
+          const rangeFKs = fkByTable[rangeTable.toLowerCase()] || [];
+          const reverseFK = rangeFKs.find(fk => fk.toTable.toLowerCase() === domainTable.toLowerCase());
+
+          const fk = matchingFK || reverseFK;
+          if (fk) {
+            const newJoinSQL = `${fk.fromTable}.${fk.fromColumn} = ${fk.toTable}.${fk.toColumn}`;
+            if (meta.joinSQL !== newJoinSQL) {
+              console.log(`  🔗 Augmented JOIN for ${relName}: ${meta.joinSQL || '(missing)'} → ${newJoinSQL}`);
+              meta.joinSQL = newJoinSQL;
+              augmented++;
+            }
+          }
+        }
+
+        // Also add any Trino FKs that don't have a corresponding ontology relationship
+        let added = 0;
+        for (const fk of allFKs) {
+          const fromClass = tableToClass[fk.fromTable.toLowerCase()];
+          const toClass = tableToClass[fk.toTable.toLowerCase()];
+          if (!fromClass || !toClass) continue;
+
+          // Check if any existing relationship already covers this FK
+          const alreadyCovered = Object.values(mappings.relationships || {}).some(rel => {
+            if (!rel.joinSQL) return false;
+            return rel.joinSQL.includes(fk.fromColumn) && rel.joinSQL.includes(fk.toColumn);
+          });
+
+          if (!alreadyCovered) {
+            // Generate a relationship name from the FK column
+            const relName = `${fromClass}_${fk.fromColumn.replace(/_id$/, '')}`;
+            mappings.relationships[relName] = {
+              domain: fromClass,
+              range: toClass,
+              joinSQL: `${fk.fromTable}.${fk.fromColumn} = ${fk.toTable}.${fk.toColumn}`
+            };
+            added++;
+          }
+        }
+
+        if (augmented > 0 || added > 0) {
+          console.log(`  🔗 JOIN augmentation: ${augmented} corrected, ${added} new from Trino FK detection`);
+        }
+      } catch (err) {
+        console.warn(`  ⚠️ FK augmentation failed (non-blocking): ${err.message}`);
+      }
+    }
+
     /**
      * Resolve mapping sourceTable values to fully-qualified Trino 3-part names.
      * Ontology stores "database.table" but Trino needs "catalog.schema.table".
@@ -361,6 +523,20 @@ class VKGQueryService {
         }
         for (const meta of Object.values(resolved.properties || {})) {
           if (meta.sourceTable) meta.sourceTable = resolve(meta.sourceTable);
+        }
+        // Also resolve table references inside joinSQL conditions
+        for (const meta of Object.values(resolved.relationships || {})) {
+          if (meta.joinSQL) {
+            // Replace 2-part table.column references with 3-part catalog.schema.table.column
+            meta.joinSQL = meta.joinSQL.replace(/(\b\w+)\.(\w+)\.(\w+)\b/g, (match, p1, p2, p3) => {
+              // Already 3-part? Check if p1 is a known catalog — if so, leave it
+              const allCatalogNames = catalogs.map(c => c.catalogName);
+              if (allCatalogNames.includes(p1)) return match;
+              // Otherwise treat as database.table.column → resolve database.table then append .column
+              const resolved3 = resolve(`${p1}.${p2}`);
+              return resolved3 !== `${p1}.${p2}` ? `${resolved3}.${p3}` : match;
+            });
+          }
         }
 
         const resolvedCount = Object.values(resolved.classes || {}).filter(m => m.sourceTable?.split('.').length >= 3).length;
@@ -457,31 +633,117 @@ class VKGQueryService {
   /**
    * LLM: Generate natural language answer from results
    */
-  async _generateAnswer(question, trinoResult, graph) {
-    if (trinoResult.rowCount === 0) {
-      return 'No results found for this query.';
+  async _generateAnswer(question, trinoResult, graph, options = {}) {
+      const { sql = '', plan = {}, mappings = null, workspaceId = null } = options;
+
+      if (trinoResult.rowCount === 0) {
+        // Instead of just "no results", try to show what data actually exists
+        const exploration = await this._exploreAvailableData(sql, plan, mappings, workspaceId);
+        if (exploration) {
+          const content = await this._llmChat([
+            { role: 'system', content: `You are a helpful data analyst. The user's query returned 0 results. You have exploration data showing what values actually exist in the database. Explain clearly: (1) the query found no matching data, (2) show what values DO exist so the user can refine their question. Be concise and helpful.` },
+            { role: 'user', content: `Question: ${question}\n\nOriginal SQL: ${sql}\n\nThe query returned 0 rows.\n\nExploration of available data:\n${exploration}\n\nExplain what happened and show the user what data is available:` }
+          ], { temperature: 0.3 });
+          return content.trim();
+        }
+        return 'No results found for this query. The filter criteria may not match any records in the database.';
+      }
+
+      const systemPrompt = this._loadPrompt('answer-generator.md');
+
+      // Build a readable summary of results
+      const colNames = trinoResult.columns.map(c => c.name);
+      const sampleRows = trinoResult.rows.slice(0, 20);
+      const resultSummary = [
+        `Columns: ${colNames.join(', ')}`,
+        `Total rows: ${trinoResult.rowCount}`,
+        '',
+        'Sample data:',
+        ...sampleRows.map(row => colNames.map((col, i) => `${col}=${row[i]}`).join(', '))
+      ].join('\n');
+
+      const content = await this._llmChat([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Question: ${question}\n\nQuery Results:\n${resultSummary}\n\nGraph: ${graph.statistics.nodeCount} entities, ${graph.statistics.edgeCount} relationships\n\nGenerate a conversational answer:` }
+      ], { temperature: 0.3 });
+
+      return content.trim();
     }
+  /**
+     * When a query returns 0 rows, explore the database to show what data actually exists.
+     * Extracts WHERE clause filter columns from the SQL and runs SELECT DISTINCT on them.
+     */
+    async _exploreAvailableData(sql, plan, mappings, workspaceId) {
+      if (!sql || !workspaceId) return null;
 
-    const systemPrompt = this._loadPrompt('answer-generator.md');
+      try {
+        // Extract table references and their aliases from the SQL
+        const aliasMap = {};
+        const tablePattern = /(?:FROM|JOIN)\s+(\w+\.\w+\.\w+)(?:\s+(?:AS\s+)?(\w+))?/gi;
+        let m;
+        while ((m = tablePattern.exec(sql)) !== null) {
+          const table = m[1];
+          const alias = m[2];
+          if (alias && !['ON', 'WHERE', 'LEFT', 'RIGHT', 'INNER', 'JOIN', 'GROUP', 'ORDER', 'HAVING', 'LIMIT'].includes(alias.toUpperCase())) {
+            aliasMap[alias] = table;
+          }
+        }
 
-    // Build a readable summary of results
-    const colNames = trinoResult.columns.map(c => c.name);
-    const sampleRows = trinoResult.rows.slice(0, 20);
-    const resultSummary = [
-      `Columns: ${colNames.join(', ')}`,
-      `Total rows: ${trinoResult.rowCount}`,
-      '',
-      'Sample data:',
-      ...sampleRows.map(row => colNames.map((col, i) => `${col}=${row[i]}`).join(', '))
-    ].join('\n');
+        // Extract filter columns from WHERE clause (columns used in comparisons)
+        const whereMatch = sql.match(/WHERE\s+([\s\S]*?)(?:GROUP\s+BY|ORDER\s+BY|LIMIT|$)/i);
+        if (!whereMatch) return null;
 
-    const content = await this._llmChat([
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: `Question: ${question}\n\nQuery Results:\n${resultSummary}\n\nGraph: ${graph.statistics.nodeCount} entities, ${graph.statistics.edgeCount} relationships\n\nGenerate a conversational answer:` }
-    ], { temperature: 0.3 });
+        const whereClause = whereMatch[1];
+        // Find alias.column or LOWER(alias.column) patterns in WHERE
+        const filterCols = new Map();
+        const colPattern = /(?:LOWER\s*\(\s*)?(\w+)\.(\w+)\s*\)?\s*(?:=|LIKE|IN|!=|<>)/gi;
+        while ((m = colPattern.exec(whereClause)) !== null) {
+          const alias = m[1];
+          const col = m[2];
+          const table = aliasMap[alias];
+          if (table) {
+            const key = `${table}.${col}`;
+            if (!filterCols.has(key)) filterCols.set(key, { table, alias, column: col });
+          }
+        }
 
-    return content.trim();
-  }
+        if (filterCols.size === 0) return null;
+
+        // Run SELECT DISTINCT on each filter column (limit to 25 values)
+        const trinoClient = await trinoManager.getClient(workspaceId);
+        const explorations = [];
+
+        for (const { table, column } of filterCols.values()) {
+          try {
+            const exploreSql = `SELECT DISTINCT ${column}, COUNT(*) as cnt FROM ${table} GROUP BY ${column} ORDER BY cnt DESC LIMIT 25`;
+            const result = await trinoClient.executeSQL(exploreSql);
+            if (result.rowCount > 0) {
+              const values = result.rows.map(r => `${r[0]} (${r[1]} rows)`);
+              explorations.push(`Column "${column}" in ${table} has ${result.rowCount} distinct values:\n  ${values.join(', ')}`);
+            }
+          } catch (e) {
+            // Non-fatal — skip this column
+            console.log(`  ⚠️ Exploration query failed for ${table}.${column}: ${e.message}`);
+          }
+        }
+
+        // Also show total row count for the main table
+        const mainTableMatch = sql.match(/FROM\s+(\w+\.\w+\.\w+)/i);
+        if (mainTableMatch) {
+          try {
+            const countResult = await trinoClient.executeSQL(`SELECT COUNT(*) FROM ${mainTableMatch[1]}`);
+            if (countResult.rows?.[0]) {
+              explorations.unshift(`Total rows in ${mainTableMatch[1]}: ${countResult.rows[0][0]}`);
+            }
+          } catch { /* non-fatal */ }
+        }
+
+        return explorations.length > 0 ? explorations.join('\n\n') : null;
+      } catch (err) {
+        console.log(`  ⚠️ Data exploration failed: ${err.message}`);
+        return null;
+      }
+    }
 
   // --- Helper methods ---
 
@@ -519,74 +781,88 @@ class VKGQueryService {
    * which catalog.schema.table each class maps to and which column each property maps to.
    */
   _describeFullMappings(ontologySchema, mappings) {
-        const lines = [];
+          const lines = [];
 
-        // Build a lookup: property name → ontology metadata (domain, range, etc.)
-        const ontoPropLookup = {};
-        for (const dp of (ontologySchema.dataProperties || [])) {
-          const name = dp.label || dp.name || (dp.iri ? dp.iri.split(/[#\/]/).pop() : '');
-          if (name) ontoPropLookup[name] = dp;
-        }
-        const ontoRelLookup = {};
-        for (const op of (ontologySchema.objectProperties || [])) {
-          const name = op.label || op.name || (op.iri ? op.iri.split(/[#\/]/).pop() : '');
-          if (name) ontoRelLookup[name] = op;
-        }
+          // Build a lookup: property name → ontology metadata (domain, range, etc.)
+          const ontoPropLookup = {};
+          for (const dp of (ontologySchema.dataProperties || [])) {
+            const name = dp.label || dp.name || (dp.iri ? dp.iri.split(/[#\/]/).pop() : '');
+            if (name) ontoPropLookup[name] = dp;
+          }
+          const ontoRelLookup = {};
+          for (const op of (ontologySchema.objectProperties || [])) {
+            const name = op.label || op.name || (op.iri ? op.iri.split(/[#\/]/).pop() : '');
+            if (name) ontoRelLookup[name] = op;
+          }
 
-        // Helper: extract local name from IRI or string, handling arrays
-        const extractLocal = (val) => {
-          if (!val) return null;
-          if (Array.isArray(val)) val = val[0]; // take first domain/range
-          if (!val) return null;
-          const s = String(val);
-          if (s.includes('/') || s.includes('#')) return s.split(/[#\/]/).pop();
-          return s;
-        };
+          // Helper: extract local name from IRI or string, handling arrays
+          const extractLocal = (val) => {
+            if (!val) return null;
+            if (Array.isArray(val)) val = val[0];
+            if (!val) return null;
+            const s = String(val);
+            if (s.includes('/') || s.includes('#')) return s.split(/[#\/]/).pop();
+            return s;
+          };
 
-        // Group properties by their domain class (from ontology schema, not mappings)
-        const propsByClass = {};
-        for (const [propName, meta] of Object.entries(mappings.properties || {})) {
-          const ontoProp = ontoPropLookup[propName];
-          const domain = extractLocal(ontoProp?.domain) || 'Unknown';
-          if (!propsByClass[domain]) propsByClass[domain] = [];
-          propsByClass[domain].push({ propName, ...meta });
-        }
+          // Group properties by their domain class (from ontology schema, not mappings)
+          const propsByClass = {};
+          for (const [propName, meta] of Object.entries(mappings.properties || {})) {
+            const ontoProp = ontoPropLookup[propName];
+            const domain = extractLocal(ontoProp?.domain) || 'Unknown';
+            if (!propsByClass[domain]) propsByClass[domain] = [];
+            propsByClass[domain].push({ propName, ...meta });
+          }
 
-        // For each mapped class, show table + all its columns
-        for (const [className, meta] of Object.entries(mappings.classes || {})) {
-          const table = meta.sourceTable || 'unknown';
-          const idCol = meta.sourceIdColumn || '?';
-          lines.push(`TABLE: ${table}`);
-          lines.push(`  Entity: ${className} (primary key: ${idCol})`);
+          // For each mapped class, show table + all its columns in SQL-friendly format
+          for (const [className, meta] of Object.entries(mappings.classes || {})) {
+            const table = meta.sourceTable || 'unknown';
+            const idCol = meta.sourceIdColumn || '?';
+            lines.push(`TABLE: ${table}  (entity: ${className})`);
+            lines.push(`  PRIMARY KEY: ${idCol}`);
 
-          // List all properties (columns) for this class
-          const props = propsByClass[className] || [];
-          if (props.length > 0) {
-            lines.push(`  Columns:`);
-            for (const p of props) {
-              const ontoProp = ontoPropLookup[p.propName];
-              const xsdType = extractLocal(ontoProp?.range) || p.range || '';
-              const sqlType = this._xsdToSqlHint(xsdType);
-              lines.push(`    ${p.sourceColumn || p.propName}${sqlType ? ' (' + sqlType + ')' : ''} → :${p.propName}`);
+            // List all columns — column name first, prominently
+            const props = propsByClass[className] || [];
+            if (props.length > 0) {
+              lines.push(`  SQL COLUMNS (use ONLY these exact column names in queries):`);
+              for (const p of props) {
+                const colName = p.sourceColumn || p.propName;
+                const ontoProp = ontoPropLookup[p.propName];
+                const xsdType = extractLocal(ontoProp?.range) || p.range || '';
+                const sqlType = this._xsdToSqlHint(xsdType);
+                lines.push(`    - ${colName}${sqlType ? ' (' + sqlType + ')' : ''}    [ontology: ${p.propName}]`);
+              }
+            }
+            lines.push('');
+          }
+
+          // Show relationship join conditions
+          const rels = mappings.relationships || {};
+          if (Object.keys(rels).length > 0) {
+            lines.push('JOINS (use these exact JOIN conditions):');
+            for (const [relName, meta] of Object.entries(rels)) {
+              const ontoRel = ontoRelLookup[relName];
+              // Use domain/range from ontology lookup, or from augmented meta (Trino FK)
+              const domain = extractLocal(ontoRel?.domain) || meta.domain || '?';
+              const range = extractLocal(ontoRel?.range) || meta.range || '?';
+              lines.push(`  ${relName}: ${domain} → ${range} ON ${meta.joinSQL || '?'}`);
             }
           }
+
+          // Build a quick-reference column dictionary for the LLM
           lines.push('');
-        }
-
-        // Show relationship join conditions (domain/range from ontology schema)
-        const rels = mappings.relationships || {};
-        if (Object.keys(rels).length > 0) {
-          lines.push('JOINS (relationship → SQL condition):');
-          for (const [relName, meta] of Object.entries(rels)) {
-            const ontoRel = ontoRelLookup[relName];
-            const domain = extractLocal(ontoRel?.domain) || '?';
-            const range = extractLocal(ontoRel?.range) || '?';
-            lines.push(`  ${relName}: ${domain} → ${range} ON ${meta.joinSQL || '?'}`);
+          lines.push('COLUMN DICTIONARY (ontology property → actual SQL column):');
+          for (const [propName, meta] of Object.entries(mappings.properties || {})) {
+            const colName = meta.sourceColumn || propName;
+            if (colName !== propName) {
+              lines.push(`  ${propName} → USE "${colName}" (NOT "${propName}")`);
+            } else {
+              lines.push(`  ${propName} → "${colName}"`);
+            }
           }
-        }
 
-        return lines.join('\n') || 'No mappings available';
-      }
+          return lines.join('\n') || 'No mappings available';
+        }
 
   /**
    * Convert XSD type hint to a SQL-friendly type hint for the LLM

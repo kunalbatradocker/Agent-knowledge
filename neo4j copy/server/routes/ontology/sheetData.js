@@ -28,16 +28,59 @@ function extractLocal(iri) {
   return iri.split('#').pop().split('/').pop();
 }
 
-// Write audit change events to GraphDB audit graph
+// Write audit change events to GraphDB audit graph + sync to Neo4j
 async function writeAuditChanges(tenantId, workspaceId, changes, sourceDocumentURI) {
   try {
     const auditGraphIRI = graphDBStore.getAuditGraphIRI(tenantId, workspaceId);
     const triples = auditService.generateChangeEventTriples(changes, auditGraphIRI, sourceDocumentURI);
     if (triples.length > 0) {
       await auditService.writeAuditTriples(tenantId, workspaceId, triples);
+      // Sync ChangeEvent nodes to Neo4j inline (lightweight — only the new events)
+      await syncAuditEventsToNeo4j(changes, sourceDocumentURI, tenantId, workspaceId);
     }
   } catch (e) {
     logger.warn(`[SheetData] Audit write failed (non-fatal): ${e.message}`);
+  }
+}
+
+// Sync individual ChangeEvent nodes to Neo4j without a full syncAll
+async function syncAuditEventsToNeo4j(changes, sourceDocumentURI, tenantId, workspaceId) {
+  const session = neo4jService.getSession();
+  try {
+    const batch = changes.map(c => ({
+      uri: `urn:audit:${uuidv4()}`,
+      entityURI: c.entityURI,
+      property: c.property,
+      previousValue: c.previousValue || '',
+      newValue: c.newValue || '',
+      changeType: c.changeType,
+      changedAt: new Date().toISOString(),
+      sourceDocument: sourceDocumentURI
+    }));
+
+    await session.run(`
+      UNWIND $batch AS row
+      CREATE (ce:ChangeEvent {
+        uri: row.uri,
+        property: row.property,
+        previousValue: row.previousValue,
+        newValue: row.newValue,
+        changeType: row.changeType,
+        changedAt: datetime(row.changedAt),
+        sourceDocument: row.sourceDocument,
+        tenant_id: $tenantId,
+        workspace_id: $workspaceId
+      })
+      WITH ce, row
+      MATCH (e {uri: row.entityURI})
+      MERGE (ce)-[:CHANGED]->(e)
+    `, { batch, tenantId, workspaceId });
+
+    logger.info(`[SheetData] Synced ${batch.length} ChangeEvent(s) to Neo4j`);
+  } catch (e) {
+    logger.warn(`[SheetData] Neo4j audit sync failed (non-fatal): ${e.message}`);
+  } finally {
+    await session.close();
   }
 }
 

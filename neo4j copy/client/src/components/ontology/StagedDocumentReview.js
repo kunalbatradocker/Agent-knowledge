@@ -242,6 +242,9 @@ const StagedDocumentReview = ({ docId, onClose, onCommit }) => {
   const [saveMode, setSaveMode] = useState('new'); // 'new' or 'version'
   const [savingOntology, setSavingOntology] = useState(false);
 
+  // LLM mapping state
+  const [llmMapping, setLlmMapping] = useState(false);
+
   // Check if user has made custom additions
   const hasCustomAdditions = customProperties.length > 0 || customClasses.length > 0;
 
@@ -700,12 +703,130 @@ const StagedDocumentReview = ({ docId, onClose, onCommit }) => {
           console.warn('Could not load saved column mappings:', e.message);
         }
         if (!loadedSaved) {
-          autoMapColumns(activeHeaders, data);
+          // Try LLM-based mapping first, fall back to deterministic
+          await llmMapColumns(activeHeaders, data, ontologyId);
         }
       }
     } catch (e) {
       console.error('Failed to load ontology structure:', e);
     }
+  };
+
+  // LLM-based column mapping — calls server for AI analysis, falls back to deterministic
+  const llmMapColumns = async (headers, structure, ontologyId) => {
+    if (!staged || headers.length === 0) {
+      autoMapColumns(headers, structure);
+      return;
+    }
+    setLlmMapping(true);
+    try {
+      const sheetsInfo = staged.sheets && staged.sheets.length > 1
+        ? staged.sheets.filter(s => selectedSheets.includes(s.name))
+        : undefined;
+      
+      const res = await fetch('/api/ontology/documents/analyze-mapping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getTenantHeaders() },
+        body: JSON.stringify({
+          headers: headers.filter(h => h !== '__sheet'),
+          sampleRows: staged.sampleRows || [],
+          ontologyId,
+          sheets: sheetsInfo,
+          tenantId: currentWorkspace?.tenant_id || 'default',
+          workspaceId: currentWorkspace?.workspace_id || 'default'
+        })
+      });
+      
+      if (!res.ok) {
+        console.warn(`🤖 LLM mapping request failed: ${res.status} ${res.statusText}`);
+        throw new Error(`Server returned ${res.status}`);
+      }
+      
+      const data = await res.json();
+      console.log(`🤖 LLM response received: success=${data.success}, hasMappings=${!!data.analysis?.mappings?.length}`);
+      
+      if (data.success && data.analysis && data.analysis.mappings?.length > 0) {
+        const analysis = data.analysis;
+        const classes = structure.classes || [];
+        console.log(`🤖 LLM response: ${analysis.mappings?.length || 0} mappings, primaryClass=${analysis.primaryClass || analysis.primaryClassLabel || 'none'}`);
+        console.log(`🤖 Sheet classes:`, analysis.sheetPrimaryClasses || {});
+        
+        // Set primary class
+        if (analysis.primaryClass) {
+          setPrimaryClass(analysis.primaryClass);
+        } else if (analysis.primaryClassLabel) {
+          const cls = classes.find(c =>
+            (c.label || '').toLowerCase() === analysis.primaryClassLabel.toLowerCase() ||
+            (c.localName || '').toLowerCase() === analysis.primaryClassLabel.toLowerCase()
+          );
+          if (cls) setPrimaryClass(cls.iri);
+        }
+        
+        // Set per-sheet primary classes
+        if (analysis.sheetPrimaryClasses && Object.keys(analysis.sheetPrimaryClasses).length > 0) {
+          setSheetPrimaryClasses(prev => ({ ...prev, ...analysis.sheetPrimaryClasses }));
+        }
+        
+        // Convert LLM mappings to the UI format
+        const mappings = analysis.mappings || [];
+        const uiMappings = {};
+        
+        for (const m of mappings) {
+          const key = m._sheet && staged.sheets?.length > 1 ? `${m._sheet}:${m.column}` : m.column;
+          uiMappings[key] = {
+            property: m.property || '',
+            propertyLabel: m.propertyLabel || m.property || m.column,
+            linkedClass: m.linkedClass || '',
+            linkedClassLabel: m.linkedClassLabel || '',
+            domain: m.domain || '',
+            domainLabel: m.domainLabel || '',
+            ignore: false,
+            reasoning: m.reasoning || ''
+          };
+        }
+        
+        // Ensure all headers have a mapping (fill gaps with defaults)
+        if (staged.sheets?.length > 1) {
+          for (const sheet of staged.sheets) {
+            if (!selectedSheets.includes(sheet.name)) continue;
+            for (const col of (sheet.headers || [])) {
+              const key = `${sheet.name}:${col}`;
+              if (!uiMappings[key]) {
+                uiMappings[key] = {
+                  property: '', propertyLabel: col, linkedClass: '', linkedClassLabel: '',
+                  domain: '', domainLabel: '', ignore: false
+                };
+              }
+            }
+          }
+        } else {
+          for (const col of headers) {
+            if (!uiMappings[col]) {
+              uiMappings[col] = {
+                property: '', propertyLabel: col, linkedClass: '', linkedClassLabel: '',
+                domain: '', domainLabel: '', ignore: false
+              };
+            }
+          }
+        }
+        
+        setColumnMappings(uiMappings);
+        console.log(`🤖 LLM mapping applied: ${Object.keys(uiMappings).length} columns`);
+        
+        // Auto-save the LLM mappings
+        const effectivePrimaryClass = analysis.primaryClass || primaryClass;
+        await saveColumnMappings(uiMappings, ontologyId, effectivePrimaryClass, analysis.sheetPrimaryClasses);
+        return;
+      }
+    } catch (e) {
+      console.warn('LLM mapping failed, falling back to deterministic:', e.message);
+    } finally {
+      setLlmMapping(false);
+    }
+    
+    // Fallback to deterministic mapping
+    console.log('🔄 Using deterministic autoMapColumns fallback');
+    autoMapColumns(headers, structure);
   };
 
   // Auto-map CSV columns to ontology using domain/range
@@ -891,17 +1012,29 @@ const StagedDocumentReview = ({ docId, onClose, onCommit }) => {
       if (!matchedClass && matchedProp) {
         // Literal property — check ontology domain
         const propDomain = matchedProp.domain;
+        const propDomainLabel = matchedProp.domainLabel;
         if (propDomain) {
           // domain can be a local name or full IRI
           const domainIri = propDomain.includes('://') ? propDomain : null;
           const domainLocal = propDomain.includes('://') ? propDomain.split(/[#/]/).pop() : propDomain;
-          // Find matching class
+          // Normalize for matching: strip spaces/underscores, lowercase
+          const normDomain = domainLocal.toLowerCase().replace(/[\s_-]/g, '');
+          // Find matching class — try IRI first, then normalized name match
           const domainClass = domainIri
             ? classes.find(c => c.iri === domainIri)
-            : classes.find(c => (c.label || c.localName || '') === domainLocal);
-          if (domainClass) {
-            domain = domainClass.iri;
-            domainLabel = domainClass.label || domainClass.localName || '';
+            : classes.find(c => {
+                const cLabel = (c.label || c.localName || '').toLowerCase().replace(/[\s_-]/g, '');
+                const cLocal = (c.localName || '').toLowerCase().replace(/[\s_-]/g, '');
+                return cLabel === normDomain || cLocal === normDomain;
+              });
+          // Also try matching via domainLabel (resolved by getOntologyStructure)
+          const resolvedClass = domainClass || (propDomainLabel ? classes.find(c => {
+            const cLabel = (c.label || c.localName || '').toLowerCase().replace(/[\s_-]/g, '');
+            return cLabel === propDomainLabel.toLowerCase().replace(/[\s_-]/g, '');
+          }) : null);
+          if (resolvedClass) {
+            domain = resolvedClass.iri;
+            domainLabel = resolvedClass.label || resolvedClass.localName || '';
           }
         }
       }
@@ -917,13 +1050,47 @@ const StagedDocumentReview = ({ docId, onClose, onCommit }) => {
       };
     });
     
+    // Auto-detect per-sheet primary classes for multi-sheet Excel BEFORE per-sheet expansion
+    // so the PK-in-own-sheet check can use the resolved class IRIs
+    const localSheetClasses = {}; // sheetName → class IRI (local, not React state)
+    if (staged?.sheets && staged.sheets.length > 1 && classes.length > 0) {
+      for (const sheet of staged.sheets) {
+        // Use existing React state first (e.g., from AI analysis or saved mapping)
+        if (sheetPrimaryClasses[sheet.name]) {
+          localSheetClasses[sheet.name] = sheetPrimaryClasses[sheet.name];
+          continue;
+        }
+        const sheetNorm = sheet.name.toLowerCase().replace(/[_\s-]/g, '');
+        // Try exact match, then singular form (e.g., "Users" → "user" → class "User")
+        let cls = classByName.get(sheetNorm);
+        if (!cls) {
+          // Strip trailing 's' for plural → singular
+          const singular = sheetNorm.replace(/s$/, '');
+          cls = classByName.get(singular);
+        }
+        if (!cls) {
+          // Try partial match: "Chargebacks" → "chargeback"
+          for (const [name, c] of classByName) {
+            if (sheetNorm.startsWith(name) || name.startsWith(sheetNorm.replace(/s$/, ''))) {
+              cls = c;
+              break;
+            }
+          }
+        }
+        if (cls) localSheetClasses[sheet.name] = cls.iri;
+      }
+      if (Object.keys(localSheetClasses).length > 0) {
+        setSheetPrimaryClasses(prev => ({ ...prev, ...localSheetClasses }));
+      }
+    }
+
     // For multi-sheet: expand flat mappings into per-sheet keys
     // A column that is the PK of its own sheet should be literal in that sheet but FK in others
     if (staged?.sheets && staged.sheets.length > 1) {
       const perSheetMappings = {};
       for (const sheet of staged.sheets) {
         if (!selectedSheets.includes(sheet.name)) continue;
-        const sheetClassIri = sheetPrimaryClasses[sheet.name] || primaryClass;
+        const sheetClassIri = localSheetClasses[sheet.name] || primaryClass;
         const sheetClassLabel = classes.find(c => c.iri === sheetClassIri)?.label?.toLowerCase().replace(/[_\s-]/g, '') || '';
         
         for (const col of (sheet.headers || [])) {
@@ -982,34 +1149,6 @@ const StagedDocumentReview = ({ docId, onClose, onCommit }) => {
       setColumnMappings(perSheetMappings);
     } else {
       setColumnMappings(mappings);
-    }
-
-    // Auto-detect per-sheet primary classes for multi-sheet Excel
-    if (staged?.sheets && staged.sheets.length > 1 && classes.length > 0) {
-      const sheetClasses = {};
-      for (const sheet of staged.sheets) {
-        const sheetNorm = sheet.name.toLowerCase().replace(/[_\s-]/g, '');
-        // Try exact match, then singular form (e.g., "Users" → "user" → class "User")
-        let cls = classByName.get(sheetNorm);
-        if (!cls) {
-          // Strip trailing 's' for plural → singular
-          const singular = sheetNorm.replace(/s$/, '');
-          cls = classByName.get(singular);
-        }
-        if (!cls) {
-          // Try partial match: "Chargebacks" → "chargeback"
-          for (const [name, c] of classByName) {
-            if (sheetNorm.startsWith(name) || name.startsWith(sheetNorm.replace(/s$/, ''))) {
-              cls = c;
-              break;
-            }
-          }
-        }
-        if (cls) sheetClasses[sheet.name] = cls.iri;
-      }
-      if (Object.keys(sheetClasses).length > 0) {
-        setSheetPrimaryClasses(prev => ({ ...prev, ...sheetClasses }));
-      }
     }
   };
 
@@ -1432,7 +1571,7 @@ const StagedDocumentReview = ({ docId, onClose, onCommit }) => {
       });
       const data = await res.json();
       if (data.success) {
-        alert(`✅ Commit started in background!\n\nJob ID: ${data.jobId}\n\nCheck Processing panel to monitor progress.`);
+        alert(`✅ Knowledge Graph enrichment started!\n\nJob ID: ${data.jobId}\n\nCheck Processing panel to monitor progress.`);
         onCommit?.(data);
         onClose?.();
       } else {
@@ -1446,7 +1585,7 @@ const StagedDocumentReview = ({ docId, onClose, onCommit }) => {
   };
 
   if (loading) return <div className="sdr-overlay"><div className="sdr-modal"><div className="sdr-loading">Loading...</div></div></div>;
-  if (!staged) return <div className="sdr-overlay"><div className="sdr-modal"><div className="sdr-error">Document not found</div></div></div>;
+  if (!staged) return <div className="sdr-overlay"><div className="sdr-modal"><div className="sdr-error">No staged data found for this document. Try re-uploading the file to enable KG enrichment.<br/><button className="sdr-btn" onClick={onClose}>Close</button></div></div></div>;
 
   return (
     <div className="sdr-overlay">
@@ -1809,6 +1948,16 @@ const StagedDocumentReview = ({ docId, onClose, onCommit }) => {
               <div className="sdr-step-header">
                 <h3>Column Mapping</h3>
                 <div className="sdr-step-actions">
+                  {!llmMapping && (
+                    <button
+                      className="sdr-btn sdr-btn-sm"
+                      onClick={() => ontologyStructure && llmMapColumns(activeHeaders, ontologyStructure, selectedOntologyId)}
+                      disabled={!selectedOntologyId || llmMapping}
+                      title="Re-analyze mappings with AI"
+                    >
+                      🤖 AI Remap
+                    </button>
+                  )}
                   <button className="sdr-preview-toggle" onClick={() => setShowPreviewPanel(!showPreviewPanel)}>
                     {showPreviewPanel ? '📊 Hide Preview' : '📊 Show Preview'}
                   </button>
@@ -1817,6 +1966,12 @@ const StagedDocumentReview = ({ docId, onClose, onCommit }) => {
                   </button>
                 </div>
               </div>
+              
+              {llmMapping && (
+                <div className="sdr-llm-mapping-banner">
+                  <span className="sdr-spinner">⏳</span> Analyzing columns with AI... detecting relationships and mapping to ontology
+                </div>
+              )}
               
               
               {/* Concept explanation banner */}
@@ -1943,7 +2098,7 @@ const StagedDocumentReview = ({ docId, onClose, onCommit }) => {
                                       const sampleRow = (staged.sampleRows || []).find(r => r.__sheet === sheet.name && r[col] != null && r[col] !== '');
                                       return (
                                         <tr key={key} className={mapping.ignore ? 'ignored' : ''}>
-                                          <td><strong>{col}</strong></td>
+                                          <td><strong title={mapping.reasoning || ''}>{col}</strong>{mapping.reasoning && <span className="sdr-ai-hint" title={mapping.reasoning}>🤖</span>}</td>
                                           <td className="sdr-sample">{sampleRow?.[col]}</td>
                                           <td>
                                             <div className="sdr-select-with-add">
@@ -1981,7 +2136,7 @@ const StagedDocumentReview = ({ docId, onClose, onCommit }) => {
                                 const mapping = columnMappings[col] || {};
                                 return (
                                   <tr key={col} className={mapping.ignore ? 'ignored' : ''}>
-                                    <td><strong>{col}</strong></td>
+                                    <td><strong title={mapping.reasoning || ''}>{col}</strong>{mapping.reasoning && <span className="sdr-ai-hint" title={mapping.reasoning}>🤖</span>}</td>
                                     <td className="sdr-sample">{activeSampleRows?.[0]?.[col]}</td>
                                     <td>
                                       <div className="sdr-select-with-add">
@@ -2297,7 +2452,7 @@ const StagedDocumentReview = ({ docId, onClose, onCommit }) => {
               </button>
             ) : (
               <button className="sdr-btn-commit" onClick={handleCommit} disabled={committing || !canUpload}>
-                {committing ? '⏳ Committing...' : '✅ Commit to GraphDB'}
+                {committing ? '⏳ Enriching...' : '🧠 Enrich with Knowledge Graph'}
               </button>
             )}
           </div>

@@ -12,6 +12,7 @@ const { v4: uuidv4 } = require('uuid');
 const neo4jService = require('../../services/neo4jService');
 const redisService = require('../../services/redisService');
 const vectorStoreService = require('../../services/vectorStoreService');
+const embeddingService = require('../../services/embeddingService');
 const pdfParser = require('../../services/pdfParser');
 const csvParser = require('../../services/csvParser');
 const chunkingService = require('../../services/chunkingService');
@@ -138,11 +139,12 @@ router.get('/', optionalTenantContext, async (req, res) => {
           uri: doc.uri,
           title: doc.title,
           doc_type: doc.doc_type,
+          status: doc.status || 'uploaded',
           entity_count: doc.entity_count || 0,
           triple_count: doc.triple_count || 0,
           chunks_stored: doc.chunks_stored || 0,
           ontology_id: doc.ontology_id,
-          created_at: doc.committed_at,
+          created_at: doc.committed_at || doc.created_at,
           folderId: doc.folder_id
         });
       }
@@ -168,8 +170,6 @@ router.get('/staged', optionalTenantContext, async (req, res) => {
     const redisService = require('../../services/redisService');
     const workspaceId = req.query.workspace_id || req.tenantContext?.workspace_id || req.headers['x-workspace-id'];
     const stagedDocs = [];
-    const now = new Date();
-    const warningThreshold = 24 * 60 * 60 * 1000; // 24 hours
     
     // Get jobs with staged docs — filtered by workspace
     const jobFilters = workspaceId ? { workspaceId } : { limit: 100 };
@@ -198,10 +198,7 @@ router.get('/staged', optionalTenantContext, async (req, res) => {
           rowCount: staged.csvData?.rowCount || staged.chunks?.length || 0,
           headers: staged.csvData?.headers,
           createdAt: job.created_at,
-          stagedAt: staged.stagedAt,
-          expiresAt: staged.expiresAt,
-          expiringWarning: timeUntilExpiry !== null && timeUntilExpiry < warningThreshold,
-          hoursUntilExpiry: timeUntilExpiry !== null ? Math.floor(timeUntilExpiry / (60 * 60 * 1000)) : null
+          stagedAt: staged.stagedAt
         });
       }
     }
@@ -243,7 +240,6 @@ router.get('/staged', optionalTenantContext, async (req, res) => {
       return bTime.localeCompare(aTime);
     });
     
-    const expiringCount = stagedDocs.filter(d => d.expiringWarning).length;
     const orphanedCount = stagedDocs.filter(d => d.orphaned).length;
     
     res.json({ 
@@ -251,9 +247,7 @@ router.get('/staged', optionalTenantContext, async (req, res) => {
       staged: stagedDocs,
       summary: {
         total: stagedDocs.length,
-        expiringSoon: expiringCount,
-        orphaned: orphanedCount,
-        warning: expiringCount > 0 ? `${expiringCount} document(s) expiring within 24 hours` : null
+        orphaned: orphanedCount
       }
     });
   } catch (error) {
@@ -280,6 +274,47 @@ router.post('/data-profile', async (req, res) => {
     res.json({ success: true, profile });
   } catch (error) {
     logger.error('Data profiling failed:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/ontology/documents/analyze-mapping
+ * LLM-based column mapping analysis for an EXISTING ontology.
+ * Uses AI to determine which columns are literals vs foreign keys,
+ * and maps each column to the correct ontology property.
+ * For multi-sheet Excel, does holistic cross-sheet relationship detection.
+ */
+router.post('/analyze-mapping', async (req, res) => {
+  try {
+    const { headers, sampleRows = [], ontologyId, sheets } = req.body;
+    const tenantId = req.headers['x-tenant-id'] || req.body.tenantId || 'default';
+    const workspaceId = req.headers['x-workspace-id'] || req.body.workspaceId || 'default';
+
+    if (!headers || !Array.isArray(headers)) {
+      return res.status(400).json({ success: false, error: 'headers array required' });
+    }
+    if (!ontologyId) {
+      return res.status(400).json({ success: false, error: 'ontologyId required' });
+    }
+
+    // Load ontology structure
+    const owlOntologyService = require('../../services/owlOntologyService');
+    const ontology = await owlOntologyService.getOntologyStructure(tenantId, workspaceId, ontologyId, 'all');
+
+    // Run data profiling (deterministic, instant)
+    const dataProfileService = require('../../services/dataProfileService');
+    const dataProfile = dataProfileService.profileColumns(headers, sampleRows, { sheets });
+
+    // Run LLM mapping analysis
+    const llmCsvAnalyzer = require('../../services/llmCsvAnalyzer');
+    console.log(`🔗 analyze-mapping: ${headers.length} headers, ontology=${ontologyId}, sheets=${sheets?.length || 1}`);
+    const analysis = await llmCsvAnalyzer.analyzeForMapping(headers, sampleRows, ontology, { sheets, dataProfile });
+
+    console.log(`🔗 analyze-mapping result: ${analysis.mappings?.length || 0} mappings, sheetClasses=${JSON.stringify(analysis.sheetPrimaryClasses || {})}`);
+    res.json({ success: true, analysis });
+  } catch (error) {
+    logger.error('LLM mapping analysis error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -505,6 +540,20 @@ router.delete('/staged/:docId', optionalTenantContext, async (req, res) => {
     
     // Delete from Redis
     await redisService.del(`staged:${docId}`);
+    
+    // Clean up doc metadata and workspace index created at upload time
+    await redisService.del(`doc:${docId}`);
+    if (workspaceId) {
+      await redisService.sRem(`workspace:${workspaceId}:docs`, docId);
+    }
+    
+    // Clean up vector store chunks embedded at upload time
+    try {
+      const vectorStoreService = require('../../services/vectorStoreService');
+      await vectorStoreService.deleteDocument(docId);
+    } catch (vecErr) {
+      logger.warn(`[staged-delete] Failed to clean up vector chunks for ${docId}: ${vecErr.message}`);
+    }
     
     // Delete associated job if exists
     const jobs = await ontologyJobService.getJobs({ limit: 100 });
@@ -2454,10 +2503,7 @@ async function processUploadInBackground(jobId, options) {
           }
         }
 
-        // Stage the data - store in Redis with 7-day TTL
-        const STAGING_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
-        const expiresAt = new Date(Date.now() + STAGING_TTL_SECONDS * 1000).toISOString();
-        
+        // Stage the data - store in Redis permanently (cleaned up when doc is deleted)
         stagedData = {
           type: 'csv',
           document: stagedDoc,
@@ -2473,22 +2519,72 @@ async function processUploadInBackground(jobId, options) {
           ontology: ontology || null,
           columnMapping: columnMapping || null,
           relationshipMapping: relationshipMapping || null,
-          stagedAt: new Date().toISOString(),
-          expiresAt: expiresAt
+          stagedAt: new Date().toISOString()
         };
 
         const redisService = require('../../services/redisService');
-        await redisService.set(`staged:${docId}`, JSON.stringify(stagedData), STAGING_TTL_SECONDS);
+        await redisService.set(`staged:${docId}`, JSON.stringify(stagedData), 0);
 
         entityCount = csvData.rows?.length || 0;
         relationshipCount = 0;
 
+        // ── Embed CSV chunks at upload time so agents can query immediately ──
+        let csvStoredChunks = 0;
+        let csvEmbedFailures = 0;
+        if (csvChunks && csvChunks.length > 0) {
+          await ontologyJobService.updateJob(jobId, {
+            progress: 70,
+            progress_message: `Embedding ${csvChunks.length} CSV chunks...`
+          });
+          const EMBED_PARALLEL = parseInt(process.env.EMBEDDING_PARALLELISM) || 10;
+          const failedIndices = [];
+          for (let i = 0; i < csvChunks.length; i += EMBED_PARALLEL) {
+            const batch = csvChunks.slice(i, i + EMBED_PARALLEL);
+            const embedResults = await Promise.allSettled(batch.map(c => embeddingService.generateEmbedding(c.text)));
+            await Promise.all(batch.map((chunk, j) => {
+              if (embedResults[j].status === 'rejected') {
+                failedIndices.push(i + j);
+                return Promise.resolve();
+              }
+              const chunkId = chunk.chunk_id || `${docId}_chunk_${i + j}`;
+              return vectorStoreService.storeChunk({
+                id: chunkId,
+                text: chunk.text,
+                documentId: docId,
+                documentName: documentName,
+                chunkIndex: i + j,
+                startChar: 0,
+                endChar: 0,
+                tenant_id: tenantId,
+                workspace_id: workspaceId,
+                doc_type: ext.replace('.', '')
+              }, embedResults[j].value).then(() => { csvStoredChunks++; }).catch(() => { failedIndices.push(i + j); });
+            }));
+          }
+          csvEmbedFailures = failedIndices.length;
+          logger.info(`📦 Embedded ${csvStoredChunks}/${csvChunks.length} CSV chunks at upload time`);
+        }
+
+        // Create doc metadata so agents can discover this document immediately
+        const docMetadata = {
+          uri: docUri, doc_id: docId, title: documentName,
+          doc_type: ext.replace('.', ''),
+          workspace_id: workspaceId, tenant_id: tenantId,
+          folder_id: folderId, ontology_id: null,
+          entity_count: 0, triple_count: 0,
+          chunks_stored: csvStoredChunks,
+          embedding_failures: csvEmbedFailures,
+          status: 'uploaded',
+          created_at: new Date().toISOString()
+        };
+        await redisService.set(`doc:${docId}`, JSON.stringify(docMetadata), 0);
+        await redisService.sAdd(`workspace:${workspaceId}:docs`, docId);
+
         await ontologyJobService.updateJob(jobId, {
           progress: 90,
-          progress_message: `Document staged for ontology linking (expires: ${expiresAt})`,
+          progress_message: `Uploaded: ${csvStoredChunks} chunks embedded, ready for agents. KG enrichment available.`,
           staged: true,
-          staged_doc_id: docId,
-          staged_expires_at: expiresAt
+          staged_doc_id: docId
         });
 
       } else {
@@ -2505,10 +2601,7 @@ async function processUploadInBackground(jobId, options) {
           pageBreaks, pageTexts
         }).chunks;
 
-        // Stage document and chunks in Redis with 7-day TTL
-        const STAGING_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
-        const expiresAt = new Date(Date.now() + STAGING_TTL_SECONDS * 1000).toISOString();
-        
+        // Stage document and chunks in Redis permanently (cleaned up when doc is deleted)
         const stagedData = {
           type: 'document',
           document: stagedDoc,
@@ -2522,21 +2615,73 @@ async function processUploadInBackground(jobId, options) {
             workspace_id: workspaceId
           })),
           text: text.substring(0, 50000),
-          stagedAt: new Date().toISOString(),
-          expiresAt: expiresAt
+          stagedAt: new Date().toISOString()
         };
 
         const redisService = require('../../services/redisService');
-        await redisService.set(`staged:${docId}`, JSON.stringify(stagedData), STAGING_TTL_SECONDS);
+        await redisService.set(`staged:${docId}`, JSON.stringify(stagedData), 0);
 
         entityCount = chunks.length;
 
+        // ── Embed document chunks at upload time so agents can query immediately ──
+        let docStoredChunks = 0;
+        let docEmbedFailures = 0;
+        if (stagedData.chunks && stagedData.chunks.length > 0) {
+          await ontologyJobService.updateJob(jobId, {
+            progress: 70,
+            progress_message: `Embedding ${stagedData.chunks.length} chunks...`
+          });
+          const EMBED_PARALLEL = parseInt(process.env.EMBEDDING_PARALLELISM) || 10;
+          const failedIndices = [];
+          for (let i = 0; i < stagedData.chunks.length; i += EMBED_PARALLEL) {
+            const batch = stagedData.chunks.slice(i, i + EMBED_PARALLEL);
+            const embedResults = await Promise.allSettled(batch.map(c => embeddingService.generateEmbedding(c.text)));
+            await Promise.all(batch.map((chunk, j) => {
+              if (embedResults[j].status === 'rejected') {
+                failedIndices.push(i + j);
+                return Promise.resolve();
+              }
+              const chunkId = chunk.chunk_id || `${docId}_chunk_${i + j}`;
+              return vectorStoreService.storeChunk({
+                id: chunkId,
+                text: chunk.text,
+                documentId: docId,
+                documentName: documentName,
+                chunkIndex: i + j,
+                startChar: 0,
+                endChar: 0,
+                start_page: chunk.start_page || 0,
+                end_page: chunk.end_page || 0,
+                tenant_id: tenantId,
+                workspace_id: workspaceId,
+                doc_type: ext.replace('.', '')
+              }, embedResults[j].value).then(() => { docStoredChunks++; }).catch(() => { failedIndices.push(i + j); });
+            }));
+          }
+          docEmbedFailures = failedIndices.length;
+          logger.info(`📦 Embedded ${docStoredChunks}/${stagedData.chunks.length} document chunks at upload time`);
+        }
+
+        // Create doc metadata so agents can discover this document immediately
+        const docMetadata = {
+          uri: docUri, doc_id: docId, title: documentName,
+          doc_type: ext.replace('.', ''),
+          workspace_id: workspaceId, tenant_id: tenantId,
+          folder_id: folderId, ontology_id: null,
+          entity_count: 0, triple_count: 0,
+          chunks_stored: docStoredChunks,
+          embedding_failures: docEmbedFailures,
+          status: 'uploaded',
+          created_at: new Date().toISOString()
+        };
+        await redisService.set(`doc:${docId}`, JSON.stringify(docMetadata), 0);
+        await redisService.sAdd(`workspace:${workspaceId}:docs`, docId);
+
         await ontologyJobService.updateJob(jobId, {
           progress: 90,
-          progress_message: `Document staged for ontology linking (expires: ${expiresAt})`,
+          progress_message: `Uploaded: ${docStoredChunks} chunks embedded, ready for agents. KG enrichment available.`,
           staged: true,
-          staged_doc_id: docId,
-          staged_expires_at: expiresAt
+          staged_doc_id: docId
         });
       }
 
@@ -2573,7 +2718,7 @@ async function processUploadInBackground(jobId, options) {
       await ontologyJobService.updateJob(jobId, {
         status: 'completed',
         progress: 100,
-        progress_message: `Staged: ${entityCount} items ready for ontology linking`,
+        progress_message: `✅ Uploaded: ${entityCount} chunks embedded, ready for agents`,
         entity_count: entityCount,
         relationship_count: relationshipCount,
         staged: true,
@@ -3325,11 +3470,11 @@ router.post('/commit-staged', async (req, res) => {
     const now = new Date().toISOString();
     const commitSteps = [
       { step: 'queued', label: 'Queued', status: 'completed', timestamp: now },
-      { step: 'extraction', label: 'Extracting Triples', status: 'pending' },
-      { step: 'embedding', label: 'Embedding Chunks', status: 'pending' },
+      { step: 'extraction', label: 'Extracting Entities & Triples', status: 'pending' },
+      { step: 'embedding', label: 'Verify Embeddings', status: 'pending' },
       { step: 'writing', label: 'Writing to GraphDB', status: 'pending' },
       { step: 'syncing', label: 'Syncing to Neo4j', status: 'pending' },
-      { step: 'complete', label: 'Committed', status: 'pending' }
+      { step: 'complete', label: 'Enriched', status: 'pending' }
     ];
     await ontologyJobService.updateJob(job.job_id, {
       status: 'processing',
@@ -3604,74 +3749,21 @@ async function _processCommitInner(jobId, docId, staged, options) {
         { tenantId, workspaceId, docUri, docTitle: staged.document.title, primaryClass: effectivePrimaryClass, strictMode: false, sheetClassMap }
       );
 
-      // Store CSV chunks + embeddings in Redis for RAG queries
+      // Embeddings are already stored at upload time — skip embedding during commit.
+      // Just record chunk count from the doc metadata for the result.
       if (staged.chunks && staged.chunks.length > 0) {
-        await ontologyJobService.updateProcessingStep(jobId, 'embedding', 'active');
-        await ontologyJobService.updateJob(jobId, {
-          progress: 45,
-          progress_message: `Embedding ${staged.chunks.length} chunks for RAG...`
-        });
-        logger.info(`[commit-staged] Storing ${staged.chunks.length} CSV chunks with embeddings for RAG...`);
-        const embeddingService = require('../../services/embeddingService');
-        const vectorStoreService = require('../../services/vectorStoreService');
-        let stored = 0;
-        const failedChunkIndices = [];
-        const EMBED_PARALLEL = parseInt(process.env.EMBEDDING_PARALLELISM) || 10;
-        try {
-          for (let i = 0; i < staged.chunks.length; i += EMBED_PARALLEL) {
-            const batch = staged.chunks.slice(i, i + EMBED_PARALLEL);
-            const embedResults = await Promise.allSettled(batch.map(c => embeddingService.generateEmbedding(c.text)));
-            await Promise.all(batch.map((chunk, j) => {
-              if (embedResults[j].status === 'rejected') {
-                if (failedChunkIndices.length === 0) {
-                  logger.warn(`[commit-staged] First embedding failure: ${embedResults[j].reason?.message || embedResults[j].reason}`);
-                }
-                failedChunkIndices.push(i + j);
-                return Promise.resolve();
-              }
-              return vectorStoreService.storeChunk({
-                id: chunk.uri || `${docId}_chunk_${i + j}`,
-                text: chunk.text,
-                documentId: docId,
-                documentName: staged.document.title,
-                chunkIndex: i + j,
-                tenant_id: tenantId,
-                workspace_id: workspaceId,
-                doc_type: staged.document.doc_type || 'csv'
-              }, embedResults[j].value).then(() => { stored++; }).catch(e => {
-                failedChunkIndices.push(i + j);
-                logger.warn(`Failed to store chunk ${i + j}: ${e.message}`);
-              });
-            }));
-          }
-        } catch (embedErr) {
-          // Batch-level failure — mark all remaining chunks as failed
-          logger.warn(`⚠️ Embedding batch failed: ${embedErr.message}`);
-          for (let k = stored + failedChunkIndices.length; k < staged.chunks.length; k++) {
-            if (!failedChunkIndices.includes(k)) failedChunkIndices.push(k);
-          }
-        }
-        result.chunksStored = stored;
-        if (failedChunkIndices.length > 0) {
-          result.embeddingFailures = failedChunkIndices.length;
-          // Save failed chunk info for retry
-          await redisService.set(`embed_pending:${docId}`, JSON.stringify({
-            chunks: staged.chunks,
-            failedIndices: failedChunkIndices,
-            tenantId, workspaceId,
-            docTitle: staged.document.title,
-            docType: staged.document.doc_type || 'csv'
-          }), 7 * 24 * 3600); // 7 day TTL
-          logger.warn(`⚠️ ${failedChunkIndices.length}/${staged.chunks.length} chunks failed embedding — saved for retry`);
-        }
-        logger.info(`📦 Stored ${stored}/${staged.chunks.length} CSV chunks with embeddings in Redis`);
-        await ontologyJobService.updateProcessingStep(jobId, 'embedding', failedChunkIndices.length > 0 ? 'completed' : 'completed', {
+        const existingDoc = await redisService.get(`doc:${docId}`);
+        const docMeta = existingDoc ? JSON.parse(existingDoc) : {};
+        result.chunksStored = docMeta.chunks_stored || staged.chunks.length;
+        logger.info(`[commit-staged] Skipping CSV embedding (already done at upload): ${result.chunksStored} chunks`);
+        await ontologyJobService.updateProcessingStep(jobId, 'embedding', 'completed', {
           chunks: staged.chunks.length,
-          stored,
-          failed: failedChunkIndices.length
+          stored: result.chunksStored,
+          failed: 0,
+          note: 'embedded at upload time'
         });
       } else {
-        logger.warn(`⚠️ [commit-staged] No CSV chunks found in staged data — RAG search will not work for this document. staged.chunks=${staged.chunks ? staged.chunks.length : 'null'}`);
+        logger.warn(`⚠️ [commit-staged] No CSV chunks found in staged data — RAG search will not work for this document.`);
         await ontologyJobService.updateProcessingStep(jobId, 'embedding', 'completed', { chunks: 0, stored: 0 });
       }
 
@@ -3782,66 +3874,16 @@ async function _processCommitInner(jobId, docId, staged, options) {
       triples.push(`<${docUri}> <${RDF}type> <${PF}Document> .`);
       triples.push(`<${docUri}> <${RDFS}label> "${graphDBTripleService.escapeTurtleLiteral(staged.document.title)}"^^<${XSD}string> .`);
       
-      // Store chunks in Redis with embeddings — parallel batches
-      await ontologyJobService.updateProcessingStep(jobId, 'embedding', 'active');
-      await ontologyJobService.updateJob(jobId, {
-        progress: 35,
-        progress_message: `Embedding ${staged.chunks.length} chunks for RAG...`
-      });
-      const embeddingService = require('../../services/embeddingService');
-      const vectorStoreService = require('../../services/vectorStoreService');
-      let storedChunks = 0;
-      const failedChunkIndices = [];
-      const EMBED_PARALLEL = parseInt(process.env.EMBEDDING_PARALLELISM) || 10;
-      try {
-        for (let i = 0; i < staged.chunks.length; i += EMBED_PARALLEL) {
-          const batch = staged.chunks.slice(i, i + EMBED_PARALLEL);
-          const embedResults = await Promise.allSettled(batch.map(c => embeddingService.generateEmbedding(c.text)));
-          await Promise.all(batch.map((chunk, j) => {
-            if (embedResults[j].status === 'rejected') {
-              if (failedChunkIndices.length === 0) {
-                logger.warn(`[commit-staged] First embedding failure: ${embedResults[j].reason?.message || embedResults[j].reason}`);
-              }
-              failedChunkIndices.push(i + j);
-              return Promise.resolve();
-            }
-            return vectorStoreService.storeChunk({
-              id: chunk.uri || `${docId}_chunk_${i + j}`,
-              text: chunk.text,
-              documentId: docId,
-              documentName: staged.document.title,
-              chunkIndex: i + j,
-              startPage: chunk.start_page,
-              tenant_id: tenantId,
-              workspace_id: workspaceId,
-              doc_type: staged.document.doc_type || 'pdf'
-            }, embedResults[j].value).then(() => { storedChunks++; }).catch(e => {
-              failedChunkIndices.push(i + j);
-              logger.warn(`Failed to store chunk ${i + j}: ${e.message}`);
-            });
-          }));
-        }
-      } catch (embedErr) {
-        logger.warn(`⚠️ Embedding batch failed: ${embedErr.message}`);
-        for (let k = storedChunks + failedChunkIndices.length; k < staged.chunks.length; k++) {
-          if (!failedChunkIndices.includes(k)) failedChunkIndices.push(k);
-        }
-      }
-      if (failedChunkIndices.length > 0) {
-        // Save failed chunk info for retry
-        await redisService.set(`embed_pending:${docId}`, JSON.stringify({
-          chunks: staged.chunks,
-          failedIndices: failedChunkIndices,
-          tenantId, workspaceId,
-          docTitle: staged.document.title,
-          docType: staged.document.doc_type || 'pdf'
-        }), 7 * 24 * 3600);
-        logger.warn(`⚠️ ${failedChunkIndices.length}/${staged.chunks.length} chunks failed embedding — saved for retry`);
-      }
+      // Embeddings are already stored at upload time — skip embedding during commit.
+      const existingDoc = await redisService.get(`doc:${docId}`);
+      const docMeta = existingDoc ? JSON.parse(existingDoc) : {};
+      let storedChunks = docMeta.chunks_stored || staged.chunks.length;
+      logger.info(`[commit-staged] Skipping document embedding (already done at upload): ${storedChunks} chunks`);
       await ontologyJobService.updateProcessingStep(jobId, 'embedding', 'completed', {
         chunks: staged.chunks.length,
         stored: storedChunks,
-        failed: failedChunkIndices.length
+        failed: 0,
+        note: 'embedded at upload time'
       });
       
       // Full entity extraction from ALL chunks (not just the 3 preview chunks)
@@ -4150,25 +4192,28 @@ Return JSON:
       progress_message: 'Storing document metadata...'
     });
 
-    // Store document metadata in Redis (not Neo4j)
+    // Store document metadata in Redis — update existing (created at upload time)
     const commitHeaders = staged.csvData?.headers?.filter(h => h !== '__sheet') || [];
-    const docMetadata = {
+    const existingDocJson = await redisService.get(`doc:${docId}`);
+    const docMetadata = existingDocJson ? JSON.parse(existingDocJson) : {};
+    Object.assign(docMetadata, {
       uri: staged.document.uri,
       doc_id: docId,
       title: staged.document.title,
       doc_type: staged.document.doc_type || staged.type,
       workspace_id: workspaceId,
       tenant_id: tenantId,
-      folder_id: staged.document.folder_id || null,
-      ontology_id: ontologyId,
+      folder_id: staged.document.folder_id || docMetadata.folder_id || null,
+      ontology_id: ontologyId || docMetadata.ontology_id || null,
       ontology_version_id: ontologyVersionId || null,
       primary_class: primaryClass,
       entity_count: result.entityCount,
       triple_count: result.tripleCount,
       chunks_stored: result.chunksStored || 0,
       source_headers: JSON.stringify(commitHeaders),
+      status: 'enriched',
       committed_at: new Date().toISOString()
-    };
+    });
     await redisService.set(`doc:${docId}`, JSON.stringify(docMetadata), 0);
     
     // Add to workspace document index
@@ -4183,10 +4228,10 @@ Return JSON:
 
     // Mark complete
     await ontologyJobService.updateJob(jobId, {
-      status: 'committed',
+      status: 'enriched',
       progress: 100,
       staged: false,
-      progress_message: `✅ Committed ${result.entityCount} entities (${result.tripleCount} triples)${embedMsg}`,
+      progress_message: `✅ Enriched: ${result.entityCount} entities (${result.tripleCount} triples) written to Knowledge Graph${embedMsg}`,
       entity_count: result.entityCount,
       triple_count: result.tripleCount,
       embedding_failures: embeddingFailures,
@@ -4211,7 +4256,7 @@ Return JSON:
       await ontologyJobService.updateProcessingStep(jobId, 'complete', 'completed');
       await ontologyJobService.updateJob(jobId, {
         progress: 100,
-        progress_message: `✅ Committed ${result.entityCount} entities (${result.tripleCount} triples)${embedMsg}`
+        progress_message: `✅ Enriched: ${result.entityCount} entities (${result.tripleCount} triples)${embedMsg}`
       });
       logger.info(`🔄 Neo4j sync completed after commit for job ${jobId}`);
     } catch (syncErr) {
@@ -4219,7 +4264,7 @@ Return JSON:
       await ontologyJobService.updateProcessingStep(jobId, 'complete', 'completed');
       await ontologyJobService.updateJob(jobId, {
         progress: 100,
-        progress_message: `✅ Committed ${result.entityCount} entities (Neo4j sync skipped)${embedMsg}`
+        progress_message: `✅ Enriched: ${result.entityCount} entities (Neo4j sync skipped)${embedMsg}`
       });
       logger.warn(`⚠️ Neo4j sync failed after commit (non-fatal): ${syncErr.message}`);
     }

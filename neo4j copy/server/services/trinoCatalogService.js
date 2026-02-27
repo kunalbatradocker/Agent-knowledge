@@ -180,12 +180,42 @@ class TrinoCatalogService {
    * List all catalogs for a tenant
    */
   async listCatalogs(tenantId, workspaceId = null) {
-    const raw = await redisService.hGetAll(this._redisKey(tenantId, workspaceId));
-    if (!raw) return [];
+    const rKey = this._redisKey(tenantId, workspaceId);
+    let raw = await redisService.hGetAll(rKey);
 
-    return Object.entries(raw).map(([key, val]) => {
+    // If no catalogs found under workspace-specific key, also check 'default' keys
+    // This handles catalogs registered before proper tenant/workspace was set up
+    if (!raw || Object.keys(raw).length === 0) {
+      const fallbackKeys = [];
+      if (tenantId !== 'default' && workspaceId && workspaceId !== 'default') {
+        fallbackKeys.push(this._redisKey('default', workspaceId));
+        fallbackKeys.push(this._redisKey(tenantId, 'default'));
+        fallbackKeys.push(this._redisKey('default', 'default'));
+      } else if (tenantId !== 'default') {
+        fallbackKeys.push(this._redisKey('default', workspaceId));
+      } else if (workspaceId && workspaceId !== 'default') {
+        fallbackKeys.push(this._redisKey(tenantId, 'default'));
+      }
+      for (const fk of fallbackKeys) {
+        const fallbackRaw = await redisService.hGetAll(fk);
+        if (fallbackRaw && Object.keys(fallbackRaw).length > 0) {
+          logger.info(`[TrinoCatalog] listCatalogs: key=${rKey} empty, found catalogs at fallback key=${fk}`);
+          raw = fallbackRaw;
+          break;
+        }
+      }
+    }
+
+    if (!raw || Object.keys(raw).length === 0) {
+      logger.info(`[TrinoCatalog] listCatalogs: key=${rKey} → empty (no fallbacks found)`);
+      return [];
+    }
+
+    const catalogs = Object.entries(raw).map(([key, val]) => {
       try { return JSON.parse(val); } catch { return { catalogName: key, status: 'unknown' }; }
     });
+    logger.info(`[TrinoCatalog] listCatalogs: key=${rKey} → ${catalogs.length} catalog(s): [${catalogs.map(c => c.catalogName).join(', ')}]`);
+    return catalogs;
   }
 
   /**
@@ -300,6 +330,7 @@ class TrinoCatalogService {
    * This handles catalogs created outside the app (e.g. via docker-compose).
    */
   async discoverCatalogs(tenantId, workspaceId = null) {
+    logger.info(`[TrinoCatalog] discoverCatalogs: tenant=${tenantId}, workspace=${workspaceId}, redisKey=${this._redisKey(tenantId, workspaceId)}`);
     const trinoClient = await trinoManager.getClient(workspaceId);
     const health = await trinoClient.checkConnection();
     if (!health.connected) {
